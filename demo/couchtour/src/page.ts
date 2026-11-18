@@ -145,7 +145,7 @@ pre{margin:6px 0 0;padding:10px;background:#0e1013;border:1px solid var(--stroke
   <section class="col" aria-label="The account holder's phone"><h2>The account holder’s phone</h2><div class="phone"><div class="pbar">BOTSHIELD</div><div id="phone"><p class="empty">Nothing yet.</p></div></div></section>
 </div>
 <div class="bar"><button class="play" id="play">Play</button><span class="rec">Step through it, or play it.</span><button class="tab" id="next">Next step</button></div>
-<p class="foot">Real runs: recorded against BotShield’s production sandbox, with a real phone and a real passkey. The extensions are open source: <a href="https://github.com/Bot-Shield/poppy-extensions">github.com/Bot-Shield/poppy-extensions</a> · <a href="/.well-known/poppy.json">this demo’s poppy.json</a>. A demo, not Couch Tour’s live service.</p>
+<p class="foot">Real runs: recorded against BotShield’s production sandbox, with a real phone and a real passkey. The extensions are open source: <a href="https://github.com/Bot-Shield/poppy-extensions">github.com/Bot-Shield/poppy-extensions</a> · <a href="/.well-known/poppy.json">this demo’s poppy.json</a>. A demo, not Couch Tour’s live service: the assistant acts for one demo customer who is already signed in. A real Couch Tour knows the customer from the agent’s Poppy sign-in, and BotShield reaches only the person who linked that account.</p>
 </div>
 <script>
 const DATA=${JSON.stringify(data).replace(/</g, '\\u003c')};
