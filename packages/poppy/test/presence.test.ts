@@ -61,7 +61,6 @@ test("another Session can't use the check", async () => {
 test('host checks refuse links that are not BotShield', () => {
   assert.equal(trustedPresenceLinks({ verification_uri: 'https://app.botshield.ai.evil.example/verify' }), false);
   assert.equal(trustedPresenceLinks({ verification_uri: 'http://app.botshield.ai/verify' }), false);
-  assert.equal(trustedPresenceLinks({ verification_uri: 'https://app.botshield.ai/verify', qr_code_uri: 'https://evil.example/qr' }), false);
 });
 
 test('Poppy-Extensions parsing', () => {

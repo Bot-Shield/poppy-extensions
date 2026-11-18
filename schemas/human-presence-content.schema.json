@@ -16,7 +16,6 @@
         "presence_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,256}$" },
         "state": { "enum": ["requested", "passed", "refused", "expired"] },
         "verification_uri": { "type": "string", "pattern": "^https://app\\.botshield\\.ai/" },
-        "qr_code_uri": { "type": "string", "pattern": "^https://api\\.botshield\\.ai/" },
         "expires_at": { "type": "string", "format": "date-time" },
         "retry_after": { "type": "integer", "minimum": 1 }
       },

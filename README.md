@@ -74,7 +74,7 @@ npm install @botshield/poppy
 import { BotShieldApi, AccountHolderApproval, approvalResponse, NotLinkedError } from '@botshield/poppy';
 
 const api = new BotShieldApi({ secretKey: process.env.BOTSHIELD_SECRET_KEY! });
-const approvals = new AccountHolderApproval({ api, agent: 'Personal agents', actionKey: 'plan' });
+const approvals = new AccountHolderApproval({ api, agent: 'yourcompany', actionKey: 'plan' });
 
 app.post('/plans/change', async (req, res) => {
   // After your Poppy Session and access token checks (spec 5.3, 7):

@@ -61,7 +61,6 @@ The Company performs nothing. It starts a presence check at BotShield
 | `presence_id` | Yes | Identifies this presence check. Characters as in [spec 8.2](https://personalagentprotocol.org/docs/1.0/spec#conversation-requests). |
 | `state` | Yes | `requested`: waiting for the person. `passed`: a person confirmed. `refused`: the gate's rule refused this person, for example because they were already counted. `expired`: nobody confirmed in time. |
 | `verification_uri` | With `requested` | The link the person opens. Its host MUST be `app.botshield.ai`. |
-| `qr_code_uri` | No | An image of the same link as a QR code, for a person on a computer. Its host MUST be `api.botshield.ai`. |
 | `expires_at` | Yes | When the check ends ([RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)). |
 | `retry_after` | With `requested` | Seconds the Personal Agent waits before repeating the request. |
 
@@ -79,7 +78,6 @@ Retry-After: 5
     "presence_id": "prs_4Fk9Qa",
     "state": "requested",
     "verification_uri": "https://app.botshield.ai/verify?request_id=2b1f…",
-    "qr_code_uri": "https://api.botshield.ai/qr/2b1f…",
     "expires_at": "2026-11-18T17:10:00Z",
     "retry_after": 5
   }
@@ -99,10 +97,11 @@ message. The JSON Schema is
 On a presence object with `state` `requested`, the Personal Agent:
 
 1. MUST NOT treat the request as done.
-2. MUST check that `verification_uri`'s host is exactly `app.botshield.ai`, and `qr_code_uri`'s,
-   when present, is exactly `api.botshield.ai`. If not, it MUST NOT show them, and handles the
-   response as an error. Otherwise a Company could send the User to a page posing as BotShield.
-3. Shows the User the link, or the QR code on a computer, with the Company's `organization.name`,
+2. MUST check that `verification_uri`'s host is exactly `app.botshield.ai`. If not, it MUST NOT
+   show it, and handles the response as an error. Otherwise a Company could send the User to a page
+   posing as BotShield.
+3. Shows the User the link, or a QR code it makes of that link on a computer, with the Company's
+   `organization.name`,
    and says a person needs to confirm in the BotShield app. It MUST NOT open the link itself, or in
    a browser it controls, and MUST NOT complete the check: only a person can.
 4. Repeats the same request, no sooner than `retry_after`, with the header `BotShield-Presence-Id`
@@ -152,7 +151,7 @@ does it for Node.js.
 - **Relayed links.** A Personal Agent, or someone using one, could send the link to another person
   to confirm. A pass shows that *a* person was present, counted once at this gate, not that they
   are the User. The gate's per-person rule is what makes relaying costly: each person counts once.
-- **Phishing.** The host checks in section 5 stop a Company passing off its own page as BotShield.
+- **Phishing.** The host check in section 5 stop a Company passing off its own page as BotShield.
   BotShield shows the person the Company's name before they confirm.
 - **What BotShield learns.** That a person confirmed at this Company's gate. Counting each person
   once needs that. BotShield doesn't learn which Personal Agent asked or the User's ID there, and

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 · 2026-11-18
+
+- `botshield.ai/human-presence`: the presence object no longer carries `qr_code_uri`; that address
+  didn't serve an image. An agent on a computer makes a QR code of `verification_uri` itself.
+- README: the example agent name is a valid Console agent name.
+
 ## 0.2.0 · 2026-11-18
 
 - Fix: `@botshield/poppy` 0.1.0 called the global `fetch` unbound, which throws "Illegal invocation"

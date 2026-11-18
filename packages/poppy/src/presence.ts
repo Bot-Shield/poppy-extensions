@@ -18,7 +18,6 @@ export interface PresenceObject {
   presence_id: string;
   state: PresenceState;
   verification_uri?: string;
-  qr_code_uri?: string;
   expires_at: string;
   retry_after?: number;
 }
@@ -142,7 +141,7 @@ function toObject(rec: PresenceRecord, retryAfter: number): PresenceObject {
   return {
     presence_id: rec.id,
     state: rec.state,
-    ...(rec.state === 'requested' ? { verification_uri: rec.verificationUri, qr_code_uri: rec.qrCodeUri, retry_after: retryAfter } : {}),
+    ...(rec.state === 'requested' ? { verification_uri: rec.verificationUri, retry_after: retryAfter } : {}),
     expires_at: rec.expiresAt,
   };
 }
@@ -178,7 +177,7 @@ export function presenceMessageExtension(presence: PresenceObject): Record<strin
 }
 
 /** The Personal Agent's host check (SPEC section 5, step 2). Exported for agent builders. */
-export function trustedPresenceLinks(p: Pick<PresenceObject, 'verification_uri' | 'qr_code_uri'>): boolean {
+export function trustedPresenceLinks(p: Pick<PresenceObject, 'verification_uri'>): boolean {
   const host = (u?: string) => {
     try {
       const url = new URL(u ?? '');
@@ -187,6 +186,5 @@ export function trustedPresenceLinks(p: Pick<PresenceObject, 'verification_uri' 
       return null;
     }
   };
-  if (host(p.verification_uri) !== 'app.botshield.ai') return false;
-  return p.qr_code_uri === undefined || host(p.qr_code_uri) === 'api.botshield.ai';
+  return host(p.verification_uri) === 'app.botshield.ai';
 }
