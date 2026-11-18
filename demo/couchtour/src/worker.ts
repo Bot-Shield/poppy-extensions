@@ -19,6 +19,7 @@ import {
   type ApprovalObject, type PresenceObject,
 } from '../../../packages/poppy/src/index.ts';
 import { DemoState, doStore, type TraceEntry } from './state.ts';
+import { demoPage } from './page.ts';
 
 export { DemoState };
 
@@ -34,6 +35,14 @@ export interface Env {
   /** A gate whose link setting is `required`: the one-time tap that links the demo account. */
   DEMO_LINK_GATE: string;
   DEMO_ADMIN_TOKEN?: string;
+  /** Live calls reach the presenter's phone, so they need this key (header X-Demo-Key, or ?key=). */
+  DEMO_LIVE_KEY?: string;
+}
+
+/** Live endpoints send real requests to the presenter's phone: only with the demo key. */
+function liveAllowed(req: Request, env: Env): boolean {
+  const key = req.headers.get('X-Demo-Key') ?? new URL(req.url).searchParams.get('key');
+  return !!env.DEMO_LIVE_KEY && key === env.DEMO_LIVE_KEY;
 }
 
 /** The demo order: what a refund would return. */
@@ -165,6 +174,10 @@ export default {
     const url = new URL(req.url);
     try {
       if (req.method === 'GET' && url.pathname === '/.well-known/poppy.json') return json(poppyJson(env));
+      const live = url.pathname === '/mcp' || url.pathname === '/api/refunds' || url.pathname === '/api/presale/enter' || url.pathname === '/api/trace';
+      if (live && !liveAllowed(req, env)) {
+        return json({ error: 'demo_key_required', error_description: 'Live calls reach the presenter\'s phone. Watch the recorded runs at /.' }, 401);
+      }
       if (req.method === 'POST' && url.pathname === '/api/refunds') {
         const body = (await req.json().catch(() => ({}))) as { to_card_last4?: string };
         return asHttp(await refund(env, sessionFrom(req), { toCardLast4: String(body.to_card_last4 ?? ''), approvalId: req.headers.get(APPROVAL_ID_HEADER) }));
@@ -194,7 +207,7 @@ export default {
         return json({ reset: true });
       }
       if (req.method === 'GET' && url.pathname === '/') {
-        return new Response('<!doctype html><title>Couch Tour · Poppy demo</title><p>The demo page is coming. Try <code>/.well-known/poppy.json</code> or <code>/mcp</code>.</p>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        return new Response(demoPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' } });
       }
       return json({ error: 'not_found' }, 404);
     } catch (e) {
