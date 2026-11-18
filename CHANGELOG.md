@@ -2,6 +2,10 @@
 
 ## 0.2.0 · 2026-11-18
 
+- `botshield.ai/approval` section 9a: the purchase gate. The account holder approves an assistant
+  once (named from its Poppy metadata); the Company checks fresh at every checkout; the person can
+  remove it. `@botshield/poppy` adds `AssistantGate`.
+
 - `botshield.ai/approval`: the approval object carries `operation_hash`, the shared operation hash
   proposed in Poppy #71/#74, and the signed answer is bound to it. `@botshield/poppy` exports
   `operationHash()`, checked against the 17 published vectors.

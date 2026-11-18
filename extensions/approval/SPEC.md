@@ -203,6 +203,31 @@ This section is the Company's side, and is not visible to the Personal Agent. Th
 If the account isn't linked to BotShield, BotShield refuses step 1 and nothing reaches anyone. The
 Company then handles the action as section 3 says.
 
+## 9a. Approving an assistant: the purchase gate
+
+Some Companies want something broader than one action: **this account holder's assistant may buy
+here**, approved once, and checked at every checkout. The same extension and the same response
+carry it. Only what the account holder approves changes.
+
+1. **The first checkout.** The Company reads the assistant's `client_name` from its Poppy metadata
+   (the document at its `client_id`, spec 4.1) and asks the account holder through BotShield:
+   *"Let {client_name} buy for you"*, with rows naming the assistant and its host. It answers the
+   Personal Agent with the usual `account_holder_approval_required` and approval object.
+2. **On approval.** BotShield reads the assistant's metadata itself and confirms the name the person
+   approved is its `client_name`. The Company then holds **BotShield's pairwise ID** for this
+   approval: one Company, one account, one assistant (`client_id`) and, under Poppy, that
+   assistant's User ID (`sub`). The ID is never sent to the Personal Agent.
+3. **Every checkout.** The Company verifies the Poppy Session (spec 5.3) and asks BotShield,
+   fresh, with the account, the pairwise ID, the assistant's `client_id` and `sub`, and its own
+   reference for the order. BotShield answers `match` with a time and a check ID, or no match, with
+   no reason. An answer is for that order only.
+4. **Removing it.** The person sees each approved assistant under the Company in the BotShield app
+   and can remove it. Every check after that is no match, and the next checkout asks again.
+
+A match says this is the account holder's assistant. It isn't consent to a purchase's terms: for an
+action where the Company wants that, it asks for the action itself (section 5). BotShield records each
+check (Company, time, result), never what was bought.
+
 ## 10. Security considerations
 
 - **The Personal Agent can't approve.** No header, tool argument or message from the Personal Agent

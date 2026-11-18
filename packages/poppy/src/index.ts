@@ -33,3 +33,4 @@ export {
 } from './poppy.ts';
 export { MemoryStore, type Store } from './store.ts';
 export { operationHash, operationHashInput, normalizeExpiresAt, jcs, type OperationLike } from './operationHash.ts';
+export { AssistantGate, readAssistantName, ASSISTANT_ACT_KEY, type GateResult } from './assistantGate.ts';

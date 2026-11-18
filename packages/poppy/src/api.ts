@@ -77,6 +77,27 @@ export class BotShieldApi {
     });
   }
 
+  /** Purchase gate: after the account holder approved the assistant, get BotShield's pairwise ID. */
+  assistantRegister(input: { requestId: string; partnerUserRef: string; clientId: string; assistantUserId?: string | null }): Promise<{ pairwise_id: string; assistant_name: string; approved_at: string }> {
+    return this.call('POST', 'gates-api/assistants/register', this.key, {
+      request_id: input.requestId,
+      partner_user_ref: input.partnerUserRef,
+      assistant_client_id: input.clientId,
+      ...(input.assistantUserId ? { assistant_user_id: input.assistantUserId } : {}),
+    });
+  }
+
+  /** Purchase gate: the fresh check at checkout. */
+  assistantCheck(input: { partnerUserRef: string; pairwiseId: string; clientId?: string | null; assistantUserId?: string | null; orderRef: string }): Promise<{ match: boolean; checked_at: string; check_id: string }> {
+    return this.call('POST', 'gates-api/assistants/check', this.key, {
+      partner_user_ref: input.partnerUserRef,
+      pairwise_id: input.pairwiseId,
+      ...(input.clientId ? { assistant_client_id: input.clientId } : {}),
+      ...(input.assistantUserId ? { assistant_user_id: input.assistantUserId } : {}),
+      order_ref: input.orderRef,
+    });
+  }
+
   /**
    * Open a presence check at one of the Company's Human Gates. With `partnerUserRef` on a gate whose
    * link setting is `required`, the same passkey tap links that account to BotShield, which is what
