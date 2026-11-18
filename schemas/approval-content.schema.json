@@ -12,7 +12,7 @@
     "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,256}$" },
     "approval": {
       "type": "object",
-      "required": ["approval_id", "state", "summary", "terms", "expires_at"],
+      "required": ["approval_id", "state", "summary", "terms", "expires_at", "operation_hash"],
       "properties": {
         "approval_id": { "$ref": "#/$defs/id" },
         "state": { "enum": ["requested", "approved", "declined", "expired"] },
@@ -32,7 +32,8 @@
           }
         },
         "expires_at": { "type": "string", "format": "date-time" },
-        "retry_after": { "type": "integer", "minimum": 1 }
+        "retry_after": { "type": "integer", "minimum": 1 },
+        "operation_hash": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
       },
       "if": { "properties": { "state": { "const": "requested" } } },
       "then": { "required": ["retry_after"] }

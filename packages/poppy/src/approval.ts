@@ -8,6 +8,7 @@
  */
 import { BotShieldApi, BotShieldError } from './api.ts';
 import { APPROVAL_EXTENSION, newId, sha256url } from './poppy.ts';
+import { operationHash } from './operationHash.ts';
 import { MemoryStore, type Store } from './store.ts';
 
 export type ApprovalState = 'requested' | 'approved' | 'declined' | 'expired';
@@ -21,6 +22,12 @@ export interface ApprovalObject {
   terms: TermRow[];
   expires_at: string;
   retry_after?: number;
+  /**
+   * The shared operation hash (PAP #71/#74) of this request: `operation_id` = `approval_id`,
+   * `revision` = a digest of what the request asks for, `summary`, `terms` = `{ rows }`, and
+   * `expires_at`. The signed answer is bound to it.
+   */
+  operation_hash: string;
 }
 
 export interface ApprovalRecord {
@@ -35,6 +42,7 @@ export interface ApprovalRecord {
   summary: string;
   terms: TermRow[];
   expiresAt: string;
+  operationHash: string;
   result?: unknown;
   /** When BotShield was last asked (ms), so repeats inside `checkEvery` don't call it again. */
   checkedAt?: number;
@@ -130,7 +138,10 @@ export class AccountHolderApproval {
   private async start(input: { account: string; client: string; summary: string; terms: TermRow[] }, digest: string, lookup: string): Promise<ApprovalRecord> {
     const id = newId('apv');
     const requestId = crypto.randomUUID();
-    const act = `${this.opts.actionKey}:${await sha256url(`${id}\n${digest}`)}`;
+    // Whole seconds, so the shared hash accepts it; BotShield's own clock decides the real expiry.
+    const expiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + this.ttl * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const opHash = await operationHash({ operation_id: id, revision: digest, summary: input.summary, terms: { rows: input.terms }, expires_at: expiresAt });
+    const act = `${this.opts.actionKey}:${opHash}`;
     let started: { expires_at: string };
     try {
       started = await this.opts.api.requestAction({
@@ -148,7 +159,7 @@ export class AccountHolderApproval {
     }
     const rec: ApprovalRecord = {
       id, lookup, state: 'requested', account: input.account, client: input.client, digest, requestId, act,
-      summary: input.summary, terms: input.terms, expiresAt: started.expires_at,
+      summary: input.summary, terms: input.terms, expiresAt: started.expires_at, operationHash: opHash,
     };
     await this.store.put(rec);
     return rec;
@@ -223,6 +234,7 @@ function toObject(rec: ApprovalRecord, retryAfter: number): ApprovalObject {
     summary: rec.summary,
     terms: rec.terms,
     expires_at: rec.expiresAt,
+    operation_hash: rec.operationHash,
     ...(state === 'requested' ? { retry_after: retryAfter } : {}),
   };
 }

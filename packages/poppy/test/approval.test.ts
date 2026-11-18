@@ -26,6 +26,7 @@ test('the first request asks the account holder and performs nothing', async () 
   assert.deepEqual(r.approval.terms, terms);
   assert.equal(r.approval.retry_after, 5);
   assert.match(state.action!.act, /^plan:[A-Za-z0-9_-]{43}$/);
+  assert.equal(state.action!.act, `plan:${r.approval.operation_hash}`, 'the signed act names the shared operation hash');
   const http = approvalResponse(r.approval);
   assert.equal(http.status, 403);
   assert.equal(http.headers['Retry-After'], '5');

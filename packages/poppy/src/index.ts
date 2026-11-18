@@ -32,3 +32,4 @@ export {
   declares,
 } from './poppy.ts';
 export { MemoryStore, type Store } from './store.ts';
+export { operationHash, operationHashInput, normalizeExpiresAt, jcs, type OperationLike } from './operationHash.ts';

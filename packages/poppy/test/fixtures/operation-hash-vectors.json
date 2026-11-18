@@ -1,0 +1,214 @@
+{
+ "source": "https://gist.github.com/aeoess/39b67031be27b1d2b1ac97da9e541dd1 (vectors.json), shared operation hash for Personal Agent Protocol #71 and #74",
+ "cases": [
+  {
+   "id": "same-01-offset",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00-07:00"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "same-02-z",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T19:45:00Z"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "same-03-zero-fraction",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T19:45:00.000Z"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "same-04-plus-zero",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T19:45:00+00:00"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "same-05-minus-zero",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T19:45:00-00:00"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "same-06-lowercase",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08t19:45:00z"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "same-07-date-rollover",
+   "expect": "match",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-09T09:45:00+14:00"
+   },
+   "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "terms-01-empty-object",
+   "expect": "differ",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00-07:00",
+    "terms": {}
+   },
+   "operation_hash": "le37JJkwIfuutWrHXO-aHLGc9rrfZQ9h8V5WNecg0m0",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\",\"terms\":{}}"
+  },
+  {
+   "id": "terms-02-object",
+   "expect": "differ",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00-07:00",
+    "terms": {
+     "payee": "Northgate Builders",
+     "amount": "4800.00",
+     "currency": "USD"
+    }
+   },
+   "operation_hash": "LjpPA_YcmxVvCJdoE_grEi-8oelV1CicV-1c0IP-49g",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\",\"terms\":{\"amount\":\"4800.00\",\"currency\":\"USD\",\"payee\":\"Northgate Builders\"}}"
+  },
+  {
+   "id": "terms-03-null",
+   "expect": "reject",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00-07:00",
+    "terms": null
+   },
+   "error": "terms must be an object when present"
+  },
+  {
+   "id": "fail-01-summary",
+   "expect": "differ",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,900.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00-07:00"
+   },
+   "operation_hash": "TZ892TpuyWocD-G0-AbdVWWzB_TQEfQZvRUunKHTTTM",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,900.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "fail-02-revision",
+   "expect": "differ",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw2",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00-07:00"
+   },
+   "operation_hash": "pEEDoQMX0Q4WHL_Itjuy4-fsil7M_IErEHLL-UrpE_M",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw2\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "fail-03-instant",
+   "expect": "differ",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:46:00-07:00"
+   },
+   "operation_hash": "WQuAMXQtt275Up32YJmEsRhV99e_Qurjp5jB8Ca9awU",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:46:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.\"}"
+  },
+  {
+   "id": "open-01-nonzero-fraction",
+   "expect": "decision",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Add Northgate Builders (account ending 4417) as a payee and send them $4,800.00 today from checking account ending 0912.",
+    "expires_at": "2026-10-08T12:45:00.500-07:00"
+   },
+   "error": "non-zero fractional seconds"
+  },
+  {
+   "id": "jcs-01-non-ascii",
+   "expect": "self",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Pay Café Øre AS €12.00 for order «A-7»\nthen confirm",
+    "expires_at": "2026-10-08T12:45:00-07:00"
+   },
+   "operation_hash": "TAJWpjbccQzsoDMydiCglXC_JMFNd9HissYjQnhdZ84",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Pay Café Øre AS €12.00 for order «A-7»\\nthen confirm\"}"
+  },
+  {
+   "id": "jcs-02-nfc",
+   "expect": "self",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Pay Café AS",
+    "expires_at": "2026-10-08T12:45:00-07:00"
+   },
+   "operation_hash": "70YjHsHWj1F6afDYEGDap-tFfkj51Lr17kTAxluxfyo",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Pay Café AS\"}"
+  },
+  {
+   "id": "jcs-03-nfd",
+   "expect": "self",
+   "operation": {
+    "operation_id": "pay_8Lm3",
+    "revision": "1791487800-Hq2Zr7Tn4Xw1",
+    "summary": "Pay Café AS",
+    "expires_at": "2026-10-08T12:45:00-07:00"
+   },
+   "operation_hash": "gihNjTlKk1HNQSTBQHYhNM3M3Q4RiXvtqXwxOK9a6aA",
+   "hash_input": "{\"expires_at\":\"2026-10-08T19:45:00Z\",\"operation_id\":\"pay_8Lm3\",\"revision\":\"1791487800-Hq2Zr7Tn4Xw1\",\"summary\":\"Pay Café AS\"}"
+  }
+ ]
+}

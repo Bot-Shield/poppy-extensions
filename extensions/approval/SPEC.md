@@ -79,6 +79,7 @@ BotShield ([section 9](#9-the-company-and-botshield)), then answers with an **ap
 | `terms` | Yes | The terms as the account holder sees them: 1 to 12 rows of `{ "label", "value" }`, label at most 40 characters, value at most 80. Every term that affects the action MUST be a row, including any total. |
 | `expires_at` | Yes | When the request for approval ends ([RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)). |
 | `retry_after` | With `requested` | Seconds the Personal Agent waits before repeating the request. |
+| `operation_hash` | Yes | The [shared operation hash](https://github.com/personal-agent-protocol/personal-agent-protocol/issues/71) of this request, base64url: RFC 8785 over `operation_id` (the `approval_id`), `revision`, `summary`, `terms` (as `{ "rows": [...] }`) and `expires_at` (UTC, `Z`, whole seconds), then SHA-256. The signed answer is bound to it, so the Company, the Personal Agent and another verifier can name the same request the same way. |
 
 **APIs.** HTTP 403, with a `Retry-After` header when the state is `requested`, and a JSON body:
 
@@ -176,7 +177,7 @@ from issuer `https://api.botshield.ai`, verifiable against
 | --- | --- |
 | `aud` | The Company's BotShield organization. A token for another Company fails. |
 | `request_id` | The Company's own ID for the request for approval. |
-| `act` | The Company's string for the action, which includes a digest of the approval (section 9). |
+| `act` | The Company's action key, then `:`, then the request's `operation_hash`. |
 | `verified` | `true` |
 | `iat`, `exp` | Issued at, and a short expiry. |
 
@@ -191,8 +192,8 @@ This section is the Company's side, and is not visible to the Personal Agent. Th
 
 1. **Start.** The Company's server calls BotShield's Actions API with its secret key: its own
    reference for the account, the action, the terms rows, a time limit, and a `request_id` it
-   chooses. The action string ends with a digest of the `approval_id` and the terms, so the signed
-   answer is bound to them.
+   chooses. The action string ends with the request's `operation_hash`, so the signed answer is
+   bound to it.
 2. **Wait.** It reads where the request stands, with the same key, until it is approved, declined
    or expired.
 3. **Check.** It checks the token once with BotShield, with its secret key and the `request_id` it
