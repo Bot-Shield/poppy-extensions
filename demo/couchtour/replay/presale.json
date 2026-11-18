@@ -1,0 +1,99 @@
+{
+ "recorded": "2026-11-18",
+ "environment": "BotShield production sandbox",
+ "note": "A real run: one person confirmed on their own phone; the same person in a second chat was refused, one per person.",
+ "entries": [
+  {
+   "at": "2026-11-18T19:14:10.977Z",
+   "flow": "presale",
+   "lane": "assistant",
+   "title": "Enter the presale for Rising Wave Live \u00b7 Red Rocks",
+   "detail": {
+    "presence_id": null
+   }
+  },
+  {
+   "at": "2026-11-18T19:14:12.053Z",
+   "flow": "presale",
+   "lane": "company",
+   "title": "A person must confirm: link sent",
+   "detail": {
+    "presence_id": "prs_lEuBFMel4etXpFQ-5keatA",
+    "state": "requested",
+    "verification_uri": "https://app.botshield.ai/verify?request_id=req_4c75de0f7958b4ada1abb8c3d59e5656",
+    "qr_code_uri": "https://api.botshield.ai/qr/req_4c75de0f7958b4ada1abb8c3d59e5656",
+    "retry_after": 5,
+    "expires_at": "2026-11-18T19:19:11.880Z"
+   }
+  },
+  {
+   "at": "2026-11-18T19:14:40.541Z",
+   "flow": "presale",
+   "lane": "assistant",
+   "title": "Enter the presale for Rising Wave Live \u00b7 Red Rocks",
+   "detail": {
+    "presence_id": "prs_lEuBFMel4etXpFQ-5keatA"
+   }
+  },
+  {
+   "at": "2026-11-18T19:14:41.323Z",
+   "flow": "presale",
+   "lane": "botshield",
+   "title": "Signed answer checked once: a person was present, counted once"
+  },
+  {
+   "at": "2026-11-18T19:14:41.389Z",
+   "flow": "presale",
+   "lane": "company",
+   "title": "Entered",
+   "detail": {
+    "entered": true,
+    "show": "Rising Wave Live \u00b7 Red Rocks",
+    "at": "2026-11-18T19:14:41.323Z"
+   }
+  },
+  {
+   "at": "2026-11-18T19:14:42.210Z",
+   "flow": "presale",
+   "lane": "assistant",
+   "title": "Enter the presale for Rising Wave Live \u00b7 Red Rocks",
+   "detail": {
+    "presence_id": null
+   }
+  },
+  {
+   "at": "2026-11-18T19:14:43.218Z",
+   "flow": "presale",
+   "lane": "company",
+   "title": "A person must confirm: link sent",
+   "detail": {
+    "presence_id": "prs__b0hE0l1-Gjrz4-I4244ug",
+    "state": "requested",
+    "verification_uri": "https://app.botshield.ai/verify?request_id=req_1c7d14cfdedf961529e6c86ff0fd3798",
+    "qr_code_uri": "https://api.botshield.ai/qr/req_1c7d14cfdedf961529e6c86ff0fd3798",
+    "retry_after": 5,
+    "expires_at": "2026-11-18T19:19:43.067Z"
+   }
+  },
+  {
+   "at": "2026-11-18T19:15:29.755Z",
+   "flow": "presale",
+   "lane": "assistant",
+   "title": "Enter the presale for Rising Wave Live \u00b7 Red Rocks",
+   "detail": {
+    "presence_id": "prs__b0hE0l1-Gjrz4-I4244ug"
+   }
+  },
+  {
+   "at": "2026-11-18T19:15:30.542Z",
+   "flow": "presale",
+   "lane": "company",
+   "title": "Check ended: refused",
+   "detail": {
+    "presence_id": "prs__b0hE0l1-Gjrz4-I4244ug",
+    "state": "refused",
+    "expires_at": "2026-11-18T19:19:43.067Z"
+   }
+  }
+ ]
+}
