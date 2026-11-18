@@ -9,7 +9,7 @@
   "keywords": ["poppy", "personal-agent-protocol", "botshield", "passkey", "approval", "human-presence", "mcp"],
   "engines": { "node": ">=20" },
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
