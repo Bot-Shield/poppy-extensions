@@ -1,0 +1,107 @@
+{
+ "recorded": "2026-11-18",
+ "environment": "BotShield production sandbox",
+ "note": "A real run: the account holder approved on their own phone with their passkey.",
+ "entries": [
+  {
+   "at": "2026-11-18T19:13:12.499Z",
+   "flow": "refund",
+   "lane": "assistant",
+   "title": "Refund 2 tickets to card ending 4417",
+   "detail": {
+    "order_id": "ord_RW-4417",
+    "to_card_last4": "4417",
+    "approval_id": null
+   }
+  },
+  {
+   "at": "2026-11-18T19:13:13.723Z",
+   "flow": "refund",
+   "lane": "company",
+   "title": "Asked the account holder through BotShield",
+   "detail": {
+    "approval_id": "apv_Dey1t2lw_1sahCGmfDRFQA",
+    "state": "requested",
+    "summary": "Refund 2 tickets to a **different card**, ending 4417.",
+    "terms": [
+     {
+      "label": "Show",
+      "value": "Rising Wave Live \u00b7 Red Rocks \u00b7 Fri, Dec 5"
+     },
+     {
+      "label": "Tickets",
+      "value": "2 \u00d7 $48.00"
+     },
+     {
+      "label": "Refund to",
+      "value": "Card ending 4417 (paid with 0912)"
+     },
+     {
+      "label": "Total",
+      "value": "$96.00"
+     }
+    ],
+    "expires_at": "2026-11-18T19:23:13.42+00:00",
+    "operation_hash": "GWpCirqizryomaM1Rh__Ytxo0KCU1VTvb90pOiigeqY",
+    "retry_after": 5
+   }
+  },
+  {
+   "at": "2026-11-18T19:13:53.825Z",
+   "flow": "refund",
+   "lane": "assistant",
+   "title": "Refund 2 tickets to card ending 4417",
+   "detail": {
+    "order_id": "ord_RW-4417",
+    "to_card_last4": "4417",
+    "approval_id": "apv_Dey1t2lw_1sahCGmfDRFQA"
+   }
+  },
+  {
+   "at": "2026-11-18T19:13:54.752Z",
+   "flow": "refund",
+   "lane": "botshield",
+   "title": "Signed answer checked once: the account holder approved these terms",
+   "detail": {
+    "approval_id": "apv_Dey1t2lw_1sahCGmfDRFQA"
+   }
+  },
+  {
+   "at": "2026-11-18T19:13:54.799Z",
+   "flow": "refund",
+   "lane": "company",
+   "title": "Refunded, once",
+   "detail": {
+    "refunded": true,
+    "order_id": "ord_RW-4417",
+    "amount": "$96.00",
+    "to_card_last4": "4417",
+    "at": "2026-11-18T19:13:54.712Z"
+   }
+  },
+  {
+   "at": "2026-11-18T19:13:55.165Z",
+   "flow": "refund",
+   "lane": "assistant",
+   "title": "Refund 2 tickets to card ending 4417",
+   "detail": {
+    "order_id": "ord_RW-4417",
+    "to_card_last4": "4417",
+    "approval_id": "apv_Dey1t2lw_1sahCGmfDRFQA"
+   }
+  },
+  {
+   "at": "2026-11-18T19:13:55.267Z",
+   "flow": "refund",
+   "lane": "company",
+   "title": "Already refunded: same result returned, nothing done again",
+   "detail": {
+    "refunded": true,
+    "order_id": "ord_RW-4417",
+    "amount": "$96.00",
+    "to_card_last4": "4417",
+    "at": "2026-11-18T19:13:54.712Z"
+   }
+  }
+ ]
+}

@@ -1,19 +1,22 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "couchtour-poppy-demo",
+  "account_id": "9e8a7774180038be08d52d95adbc82c5",
   "main": "src/worker.ts",
   "compatibility_date": "2026-07-01",
   // A demo Couch Tour for BotShield's Poppy extensions. Not Couch Tour's production service.
-  // No custom domain until Paul OKs poppy-demo.couchtour.app (a DNS change on couchtour.app).
-  "workers_dev": true,
+  // Paul OK'd poppy-demo.couchtour.app (2026-11-18). A subdomain, so nothing that real assistants
+  // discover is on couchtour.app itself.
+  "routes": [{ "pattern": "poppy-demo.couchtour.app", "custom_domain": true, "zone_name": "couchtour.app" }],
+  "workers_dev": false,
   "vars": {
-    // Which BotShield the demo company talks to. Staging until a production sandbox key is approved.
-    "BOTSHIELD_API_URL": "https://wg-staging.botshield.ai",
+    // BotShield's production sandbox (a development key): real servers, the presenter's real phone.
+    "BOTSHIELD_API_URL": "https://api.botshield.ai",
     "DEMO_HOST": "poppy-demo.couchtour.app",
     "DEMO_AGENT_NAME": "couchtour",
     "DEMO_REFUND_ACTION": "refund",
     "DEMO_PRESENCE_GATE": "poppy-demo-redrocks",
-    "DEMO_LINK_GATE": "poppy-demo-link"
+    "DEMO_LINK_GATE": "poppy-demo-link-2"
   },
   // Secrets: BOTSHIELD_SECRET_KEY (the demo company's bs_ key), DEMO_ACCOUNT_REF (the linked demo account).
   "durable_objects": { "bindings": [{ "name": "STATE", "class_name": "DemoState" }] },
