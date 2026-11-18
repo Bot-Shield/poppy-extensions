@@ -146,6 +146,9 @@ does it for Node.js.
 
 ## 9. Security considerations
 
+- **Who counts as one person.** BotShield counts a person by their BotShield ID and the verified
+  phone number on it, so one person with several IDs on the same number is still counted once. A
+  gate can require a verified number; a person without one is refused.
 - **Relayed links.** A Personal Agent, or someone using one, could send the link to another person
   to confirm. A pass shows that *a* person was present, counted once at this gate, not that they
   are the User. The gate's per-person rule is what makes relaying costly: each person counts once.

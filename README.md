@@ -100,8 +100,18 @@ Gate with its per-person rule. A `bs_dev_` key runs everything in the sandbox.
 
 ## Status
 
-Draft, version 1 of each extension, written against Poppy 1.0. Feedback is welcome in this
-repository's issues. We plan to propose them in the Poppy repository, on the threads above.
+Draft, version 1 of each extension, written against Poppy 1.0, and **tested end to end against a
+live BotShield environment** with the [reference Company and agent](reference) (2026-11-18):
+
+| Run | Result |
+| --- | --- |
+| Presale entry, person confirms with their passkey | Entry recorded |
+| Same person, new Session, same presale | Refused: one entry per person |
+| A gate that needs a verified phone number, account without one | Refused |
+| Plan change, account holder approves the exact terms in the BotShield app | Plan changed, once |
+
+Feedback is welcome in this repository's issues. We plan to propose the extensions in the Poppy
+repository, on the threads above.
 
 ## License
 
