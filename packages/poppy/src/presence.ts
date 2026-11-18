@@ -7,6 +7,7 @@
  *   // a person was present, and the gate's per-person rule let them through
  */
 import { BotShieldApi } from './api.ts';
+import { isTransient } from './approval.ts';
 import { PRESENCE_EXTENSION, newId } from './poppy.ts';
 import { MemoryStore, type Store } from './store.ts';
 
@@ -31,6 +32,8 @@ export interface PresenceRecord {
   qrCodeUri: string;
   expiresAt: string;
   passedAt?: number;
+  /** When BotShield was last asked (ms), so repeats inside `checkEvery` don't call it again. */
+  checkedAt?: number;
 }
 
 export interface HumanPresenceOptions {
@@ -41,12 +44,15 @@ export interface HumanPresenceOptions {
   /** How long a pass covers the Session, in seconds. Default 3600. */
   passFor?: number;
   retryAfter?: number;
+  /** Ask BotShield at most once per this many seconds per check, however often the agent repeats. Default 10. */
+  checkEvery?: number;
 }
 
 export class HumanPresence {
   private readonly store: Store<PresenceRecord>;
   private readonly passFor: number;
   private readonly retryAfter: number;
+  private readonly checkEvery: number;
   private readonly opts: HumanPresenceOptions;
 
   constructor(opts: HumanPresenceOptions) {
@@ -54,6 +60,7 @@ export class HumanPresence {
     this.store = opts.store ?? new MemoryStore<PresenceRecord>();
     this.passFor = opts.passFor ?? 3600;
     this.retryAfter = opts.retryAfter ?? 5;
+    this.checkEvery = (opts.checkEvery ?? 10) * 1000;
   }
 
   /**
@@ -88,18 +95,43 @@ export class HumanPresence {
 
   private async refresh(rec: PresenceRecord): Promise<PresenceRecord> {
     if (rec.state !== 'requested') return rec;
-    const s = await this.opts.api.checkStatus(rec.requestId);
+    if (rec.checkedAt && Date.now() - rec.checkedAt < this.checkEvery) return rec;
+    const checked = { ...rec, checkedAt: Date.now() };
+    let s: Awaited<ReturnType<BotShieldApi['checkStatus']>>;
+    try {
+      s = await this.opts.api.checkStatus(rec.requestId);
+    } catch (e) {
+      if (isTransient(e)) {
+        await this.store.swap(checked, 'requested');
+        return checked;
+      }
+      throw e;
+    }
     let next: PresenceState = 'requested';
     if (s.status === 'failed') next = 'refused';
     else if (s.status === 'expired' || s.status === 'not_found') next = 'expired';
     else if (s.status === 'completed') {
       next = 'refused';
-      if (s.verification_token) {
-        const v = await this.opts.api.verifyToken({ token: s.verification_token, expectedRequestId: rec.requestId });
-        if (v.valid && v.verdict === 'pass' && v.claims?.verified === true) next = 'passed';
+      // BotShield returns the pass in one of two fields; it accepts one of them.
+      try {
+        for (const token of [s.verification_token, s.signed_token]) {
+          if (!token) continue;
+          const v = await this.opts.api.verifyToken({ token, expectedRequestId: rec.requestId });
+          if (v.valid && v.verdict === 'pass' && v.claims?.verified === true) {
+            next = 'passed';
+            break;
+          }
+        }
+      } catch (e) {
+        if (!isTransient(e)) throw e;
+        await this.store.swap(checked, 'requested');
+        return checked;
       }
     } else if (new Date(rec.expiresAt).getTime() <= Date.now()) next = 'expired';
-    if (next === 'requested') return rec;
+    if (next === 'requested') {
+      await this.store.swap(checked, 'requested');
+      return checked;
+    }
     const updated: PresenceRecord = { ...rec, state: next, ...(next === 'passed' ? { passedAt: Date.now() } : {}) };
     if (await this.store.swap(updated, 'requested')) return updated;
     return (await this.store.get(rec.id)) ?? updated;

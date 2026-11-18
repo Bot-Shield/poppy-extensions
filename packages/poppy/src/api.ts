@@ -77,17 +77,25 @@ export class BotShieldApi {
     });
   }
 
-  /** Open a presence check at one of the Company's Human Gates. */
-  async startGateCheck(input: { gate: string }): Promise<{
+  /**
+   * Open a presence check at one of the Company's Human Gates. With `partnerUserRef` on a gate whose
+   * link setting is `required`, the same passkey tap links that account to BotShield, which is what
+   * `botshield.ai/approval` needs first.
+   */
+  async startGateCheck(input: { gate: string; partnerUserRef?: string }): Promise<{
     request_id: string;
     web_url: string;
     qr_code_url: string;
     expires_at: string;
   }> {
-    const grant = await this.call<{ anchor_grant_token?: string; session_token?: string }>('POST', 'sdk/create-session', this.key, {});
+    const ref = input.partnerUserRef ? { partner_user_id: input.partnerUserRef } : {};
+    const grant = await this.call<{ anchor_grant_token?: string; session_token?: string }>('POST', 'sdk/create-session', this.key, ref);
     const grantToken = grant.anchor_grant_token ?? grant.session_token;
     if (!grantToken) throw new BotShieldError('BotShield did not return a grant token.', 502, null);
-    return this.call('POST', 'sdk/create-verification-link', grantToken, { gate: input.gate });
+    return this.call('POST', 'sdk/create-verification-link', grantToken, {
+      gate: input.gate,
+      ...(input.partnerUserRef ? { partner_user_ref: input.partnerUserRef } : {}),
+    });
   }
 
   /** A presence check's status. With the secret key, a passed check carries its token. */
@@ -97,6 +105,7 @@ export class BotShieldApi {
     reason?: string | null;
     expires_at?: string;
     verification_token?: string | null;
+    signed_token?: string | null;
   }> {
     return this.call('GET', 'verification/status', this.key, { request_id: requestId }, { raw: true });
   }
@@ -131,6 +140,12 @@ export class BotShieldApi {
     }
     const res = await this.doFetch(url, init);
     const body = (await res.json().catch(() => null)) as unknown;
+    // A gateway refusal (rate limit, auth) arrives as `{ errors: [...] }` with a 4xx.
+    const gw = (body as { errors?: Array<{ message?: string; code?: string }> } | null)?.errors?.[0];
+    if (gw) {
+      const code = gw.code === 'RATE_LIMITED' ? 'rate_limited' : (gw.code ?? null);
+      throw new BotShieldError(gw.message ?? `BotShield answered HTTP ${res.status}.`, res.status, code);
+    }
     return unwrap<T>(body, res.status, opts.raw === true);
   }
 }

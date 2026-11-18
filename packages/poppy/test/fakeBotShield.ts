@@ -8,6 +8,8 @@ export interface FakeState {
   action?: { request_id: string; act: string; status: string; expires_at: string; token: string | null; spent: boolean };
   check?: { request_id: string; status: string; reason: string | null; token: string | null; spent: boolean };
   calls: string[];
+  /** When set, every call is refused the way BotShield's gateway refuses a key over its limit. */
+  rateLimited?: boolean;
 }
 
 export function fakeBotShield(state: FakeState): typeof fetch {
@@ -19,6 +21,9 @@ export function fakeBotShield(state: FakeState): typeof fetch {
     const u = new URL(String(url));
     const op = u.pathname.replace('/operations/', '');
     state.calls.push(op);
+    if (state.rateLimited) {
+      return new Response(JSON.stringify({ errors: [{ message: 'Development key limit reached (hourly)', code: 'RATE_LIMITED' }] }), { status: 403 });
+    }
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     const auth = new Headers(init?.headers).get('Authorization') ?? '';
 

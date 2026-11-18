@@ -36,6 +36,8 @@ export interface ApprovalRecord {
   terms: TermRow[];
   expiresAt: string;
   result?: unknown;
+  /** When BotShield was last asked (ms), so repeats inside `checkEvery` don't call it again. */
+  checkedAt?: number;
 }
 
 export type RequireResult<T = unknown> =
@@ -70,12 +72,15 @@ export interface AccountHolderApprovalOptions {
   ttlSeconds?: number;
   /** Seconds the Personal Agent waits between repeats. Default 5. */
   retryAfter?: number;
+  /** Ask BotShield at most once per this many seconds per request, however often the agent repeats. Default 10. */
+  checkEvery?: number;
 }
 
 export class AccountHolderApproval {
   private readonly store: Store<ApprovalRecord>;
   private readonly ttl: number;
   private readonly retryAfter: number;
+  private readonly checkEvery: number;
   private readonly opts: AccountHolderApprovalOptions;
 
   constructor(opts: AccountHolderApprovalOptions) {
@@ -84,6 +89,7 @@ export class AccountHolderApproval {
     this.store = opts.store ?? new MemoryStore<ApprovalRecord>();
     this.ttl = Math.min(86400, Math.max(60, opts.ttlSeconds ?? 600));
     this.retryAfter = opts.retryAfter ?? 5;
+    this.checkEvery = (opts.checkEvery ?? 10) * 1000;
   }
 
   /**
@@ -151,18 +157,33 @@ export class AccountHolderApproval {
   /** Read BotShield once for a request still waiting, and collect and check the token on approval. */
   private async refresh(rec: ApprovalRecord): Promise<ApprovalRecord> {
     if (rec.state !== 'requested') return rec;
-    const s = await this.opts.api.actionStatus({ requestId: rec.requestId, agent: this.opts.agent });
+    // However often the agent repeats, BotShield is asked at most once per `checkEvery`.
+    if (rec.checkedAt && Date.now() - rec.checkedAt < this.checkEvery) return rec;
+    const checked = { ...rec, checkedAt: Date.now() };
     let next: ApprovalRecord['state'] = 'requested';
-    if (s.status === 'denied' || s.status === 'cancelled') next = 'declined';
-    else if (s.status === 'expired') next = 'expired';
-    else if (s.status === 'approved') {
-      next = 'expired'; // approved, but the token can no longer be collected: treat as unanswered
-      if (s.token) {
-        const v = await this.opts.api.verifyToken({ token: s.token, expectedRequestId: rec.requestId });
-        if (v.valid && v.verdict !== 'unavailable' && v.claims?.verified === true && v.claims.act === rec.act) next = 'approved';
+    try {
+      const s = await this.opts.api.actionStatus({ requestId: rec.requestId, agent: this.opts.agent });
+      if (s.status === 'denied' || s.status === 'cancelled') next = 'declined';
+      else if (s.status === 'expired') next = 'expired';
+      else if (s.status === 'approved') {
+        next = 'expired'; // approved, but the token can no longer be collected: treat as unanswered
+        if (s.token) {
+          const v = await this.opts.api.verifyToken({ token: s.token, expectedRequestId: rec.requestId });
+          if (v.valid && v.verdict !== 'unavailable' && v.claims?.verified === true && v.claims.act === rec.act) next = 'approved';
+        }
+      } else if (new Date(s.expires_at).getTime() <= Date.now()) next = 'expired';
+    } catch (e) {
+      // Rate limited or unavailable: nothing is decided. Keep waiting; the next repeat asks again.
+      if (isTransient(e)) {
+        await this.store.swap(checked, 'requested');
+        return checked;
       }
-    } else if (new Date(s.expires_at).getTime() <= Date.now()) next = 'expired';
-    if (next === 'requested') return rec;
+      throw e;
+    }
+    if (next === 'requested') {
+      await this.store.swap(checked, 'requested');
+      return checked;
+    }
     const updated = { ...rec, state: next };
     if (await this.store.swap(updated, 'requested')) return updated;
     return (await this.store.get(rec.id)) ?? updated; // another request moved it first
@@ -187,6 +208,11 @@ export class AccountHolderApproval {
     await this.store.swap({ ...rec, state: 'performed', result }, 'performing');
     return result;
   }
+}
+
+/** A refusal that decides nothing about the request: rate limits and outages. */
+export function isTransient(e: unknown): boolean {
+  return e instanceof BotShieldError && (e.code === 'rate_limited' || e.code === 'unavailable' || e.status === 429 || e.status >= 500);
 }
 
 function toObject(rec: ApprovalRecord, retryAfter: number): ApprovalObject {

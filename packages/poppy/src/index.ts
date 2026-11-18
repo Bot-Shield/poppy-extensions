@@ -7,6 +7,7 @@ export {
   approvalToolResult,
   approvalMessageExtension,
   canonical,
+  isTransient,
   type ApprovalObject,
   type ApprovalState,
   type TermRow,

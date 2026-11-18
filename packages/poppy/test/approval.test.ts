@@ -128,3 +128,21 @@ test('terms are checked before anything is sent', async () => {
   await assert.rejects(approvals.require({ ...ask, terms: [{ label: 'x'.repeat(41), value: 'y' }] }), /label/);
   assert.equal(state.calls.length, 0);
 });
+
+test('repeats inside checkEvery do not call BotShield again', async () => {
+  const { state, approvals } = setup();
+  const first = await approvals.require(ask);
+  assert.ok(!first.approved);
+  for (let i = 0; i < 5; i++) await approvals.require({ ...ask, approvalId: first.approval.approval_id });
+  assert.equal(state.calls.filter((c) => c === 'gates-api/actions/request-status').length, 1);
+});
+
+test('a rate limit decides nothing: the request stays requested', async () => {
+  const { state, approvals } = setup();
+  const first = await approvals.require(ask);
+  assert.ok(!first.approved);
+  state.rateLimited = true;
+  const r = await approvals.require({ ...ask, approvalId: first.approval.approval_id });
+  assert.ok(!r.approved);
+  assert.equal(r.approval.state, 'requested');
+});
