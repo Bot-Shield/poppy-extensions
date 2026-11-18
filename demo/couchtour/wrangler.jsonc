@@ -12,7 +12,8 @@
     "DEMO_HOST": "poppy-demo.couchtour.app",
     "DEMO_AGENT_NAME": "couchtour",
     "DEMO_REFUND_ACTION": "refund",
-    "DEMO_PRESENCE_GATE": "poppy-demo-redrocks"
+    "DEMO_PRESENCE_GATE": "poppy-demo-redrocks",
+    "DEMO_LINK_GATE": "poppy-demo-link"
   },
   // Secrets: BOTSHIELD_SECRET_KEY (the demo company's bs_ key), DEMO_ACCOUNT_REF (the linked demo account).
   "durable_objects": { "bindings": [{ "name": "STATE", "class_name": "DemoState" }] },

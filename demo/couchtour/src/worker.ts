@@ -31,6 +31,8 @@ export interface Env {
   DEMO_AGENT_NAME: string;
   DEMO_REFUND_ACTION: string;
   DEMO_PRESENCE_GATE: string;
+  /** A gate whose link setting is `required`: the one-time tap that links the demo account. */
+  DEMO_LINK_GATE: string;
   DEMO_ADMIN_TOKEN?: string;
 }
 
@@ -172,6 +174,20 @@ export default {
       }
       if (url.pathname === '/mcp') return mcp(req, env);
       if (req.method === 'GET' && url.pathname === '/api/trace') return json(await deps(env).stub.traces());
+      // Setup, admin only: link the demo account to the presenter's BotShield ID (one passkey tap),
+      // then confirm it (keys whose links wait for the server's confirm).
+      if (url.pathname.startsWith('/api/admin/link')) {
+        if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
+        const api = new BotShieldApi({ secretKey: env.BOTSHIELD_SECRET_KEY, baseUrl: env.BOTSHIELD_API_URL });
+        if (req.method === 'POST' && url.pathname === '/api/admin/link') {
+          const c = await api.startGateCheck({ gate: env.DEMO_LINK_GATE, partnerUserRef: env.DEMO_ACCOUNT_REF });
+          return json({ request_id: c.request_id, verification_uri: c.web_url, expires_at: c.expires_at });
+        }
+        const rid = url.searchParams.get('request_id');
+        if (req.method === 'POST' && url.pathname === '/api/admin/link/confirm' && rid) {
+          return json({ link: await api.confirmLink({ requestId: rid, partnerUserRef: env.DEMO_ACCOUNT_REF }) });
+        }
+      }
       if (req.method === 'POST' && url.pathname === '/api/reset') {
         if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
         await deps(env).stub.reset();

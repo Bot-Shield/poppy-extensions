@@ -132,15 +132,38 @@ export class BotShieldApi {
     return this.call('GET', 'verification/status', this.key, { request_id: requestId }, { raw: true });
   }
 
+  /**
+   * Finish linking an account after the person confirmed a link check started with
+   * `startGateCheck({ gate, partnerUserRef })`. Collects the token and checks it once with the account,
+   * which confirms a link that waits for your server. Returns the link's state.
+   */
+  async confirmLink(input: { requestId: string; partnerUserRef: string }): Promise<'live' | 'pending' | 'not_live' | 'not_done'> {
+    const s = await this.checkStatus(input.requestId);
+    if (s.status !== 'completed') return 'not_done';
+    for (const token of [s.verification_token, s.signed_token]) {
+      if (!token) continue;
+      const v = await this.verifyToken({ token, expectedRequestId: input.requestId, partnerUserRef: input.partnerUserRef });
+      if (v.valid) return v.link?.state ?? 'live';
+    }
+    return 'not_live';
+  }
+
   /** Check a token once. BotShield refuses the same token a second time. */
-  verifyToken(input: { token: string; expectedRequestId: string }): Promise<{
+  verifyToken(input: { token: string; expectedRequestId: string; partnerUserRef?: string }): Promise<{
     valid: boolean;
     verdict?: 'pass' | 'unavailable';
     reason?: string;
     code?: string;
     claims?: { request_id: string; verified: boolean; act?: string; kind?: string | null; [k: string]: unknown };
+    link?: { state: 'live' | 'pending' | 'not_live'; confirmed: boolean; code?: string };
   }> {
-    return this.call('POST', 'sdk/verify-token', this.key, { token: input.token, expected_request_id: input.expectedRequestId });
+    // With `partnerUserRef`, a token whose link waits for your server's confirm also confirms it:
+    // the link goes live for that account (`link.state: 'live'` in the answer).
+    return this.call('POST', 'sdk/verify-token', this.key, {
+      token: input.token,
+      expected_request_id: input.expectedRequestId,
+      ...(input.partnerUserRef ? { partner_user_ref: input.partnerUserRef } : {}),
+    });
   }
 
   private async call<T>(
