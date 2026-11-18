@@ -36,7 +36,8 @@ export class BotShieldApi {
     if (!opts.secretKey?.startsWith('bs_')) throw new Error('secretKey must be a BotShield secret key (bs_…)');
     this.key = opts.secretKey;
     this.base = (opts.baseUrl ?? 'https://api.botshield.ai').replace(/\/+$/, '');
-    this.doFetch = opts.fetch ?? fetch;
+    // Called through a wrapper: Cloudflare Workers (and some browsers) throw "Illegal invocation" on an unbound global fetch.
+    this.doFetch = opts.fetch ?? ((input, init) => fetch(input, init));
   }
 
   /** Ask the linked account holder to approve one act (BotShield Actions). */

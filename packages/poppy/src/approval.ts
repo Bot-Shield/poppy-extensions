@@ -256,7 +256,7 @@ export function approvalResponse(approval: ApprovalObject): { status: 403; heade
 
 /** An MCP tool error result that any MCP client can act on (SPEC section 5). */
 export function approvalToolResult(approval: ApprovalObject): { isError: true; content: Array<{ type: 'text'; text: string }>; structuredContent: { approval: ApprovalObject } } {
-  const what = approval.summary.replace(/[*_`]/g, '');
+  const what = approval.summary.replace(/[*_`]/g, '').replace(/[.\s]+$/, '');
   const text =
     approval.state === 'requested'
       ? `Not done yet. The account holder needs to approve this in the BotShield app on their phone: ${what}. Call this tool again after they approve.`

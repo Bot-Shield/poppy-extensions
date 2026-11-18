@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "couchtour-poppy-demo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-01",
+  // A demo Couch Tour for BotShield's Poppy extensions. Not Couch Tour's production service.
+  // No custom domain until Paul OKs poppy-demo.couchtour.app (a DNS change on couchtour.app).
+  "workers_dev": true,
+  "vars": {
+    // Which BotShield the demo company talks to. Staging until a production sandbox key is approved.
+    "BOTSHIELD_API_URL": "https://wg-staging.botshield.ai",
+    "DEMO_HOST": "poppy-demo.couchtour.app",
+    "DEMO_AGENT_NAME": "couchtour",
+    "DEMO_REFUND_ACTION": "refund",
+    "DEMO_PRESENCE_GATE": "poppy-demo-redrocks"
+  },
+  // Secrets: BOTSHIELD_SECRET_KEY (the demo company's bs_ key), DEMO_ACCOUNT_REF (the linked demo account).
+  "durable_objects": { "bindings": [{ "name": "STATE", "class_name": "DemoState" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DemoState"] }],
+  "observability": { "enabled": true }
+}

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AccountHolderApproval, NotLinkedError, StillPerformingError, approvalResponse, approvalToolResult } from '../src/approval.ts';
@@ -146,4 +147,9 @@ test('a rate limit decides nothing: the request stays requested', async () => {
   const r = await approvals.require({ ...ask, approvalId: first.approval.approval_id });
   assert.ok(!r.approved);
   assert.equal(r.approval.state, 'requested');
+});
+
+test('the default fetch is called bound, so it works on Cloudflare Workers', () => {
+  const src = readFileSync(new URL('../src/api.ts', import.meta.url), 'utf8');
+  assert.match(src, /this\.doFetch = opts\.fetch \?\? \(\(input, init\) => fetch\(input, init\)\)/);
 });

@@ -2,6 +2,11 @@
 
 ## 0.2.0 · 2026-11-18
 
+- Fix: `@botshield/poppy` 0.1.0 called the global `fetch` unbound, which throws "Illegal invocation"
+  on Cloudflare Workers. It now works there (found building the Couch Tour demo).
+- `demo/couchtour`: a demo Couch Tour on Cloudflare Workers with `poppy.json`, an API and an MCP
+  server (`request_refund`, `enter_presale`), tested against a live BotShield environment.
+
 - `botshield.ai/approval` section 9a: the purchase gate. The account holder approves an assistant
   once (named from its Poppy metadata); the Company checks fresh at every checkout; the person can
   remove it. `@botshield/poppy` adds `AssistantGate`.
