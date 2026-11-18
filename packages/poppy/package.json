@@ -1,0 +1,23 @@
+{
+  "name": "@botshield/poppy",
+  "version": "0.1.0",
+  "description": "BotShield extensions for the Personal Agent Protocol (Poppy): the account holder's approval, and human presence. Company side, for Node.js.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": { "type": "git", "url": "git+https://github.com/Bot-Shield/poppy-extensions.git", "directory": "packages/poppy" },
+  "homepage": "https://github.com/Bot-Shield/poppy-extensions#readme",
+  "keywords": ["poppy", "personal-agent-protocol", "botshield", "passkey", "approval", "human-presence", "mcp"],
+  "engines": { "node": ">=20" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

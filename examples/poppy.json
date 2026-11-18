@@ -1,0 +1,18 @@
+{
+  "protocol_version": "1.0",
+  "organization": { "name": "Example Mobile", "domain": "example.com" },
+  "auth": {
+    "scopes": {
+      "plan:read": "See your plan and bills",
+      "plan:write": "Change your plan. The account holder approves each change in the BotShield app"
+    }
+  },
+  "apis": [
+    { "type": "openapi", "url": "https://api.example.com/openapi.json", "description": "Plans, bills and orders" },
+    { "type": "mcp", "url": "https://mcp.example.com/mcp", "description": "Plans and presale entries" }
+  ],
+  "extensions": {
+    "botshield.ai/approval": [{ "version": "1" }],
+    "botshield.ai/human-presence": [{ "version": "1" }]
+  }
+}

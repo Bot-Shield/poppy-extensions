@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Bot-Shield/poppy-extensions/blob/main/schemas/human-presence-content.schema.json",
+  "title": "botshield.ai/human-presence version 1, conversation content",
+  "description": "The content a Company message carries in extensions[\"botshield.ai/human-presence\"] (spec 3.3, 8.4). The same presence object is in an API's 403 body under `presence`, and in an MCP tool error's structuredContent.presence.",
+  "type": "object",
+  "required": ["presence"],
+  "properties": {
+    "presence": { "$ref": "#/$defs/presence" }
+  },
+  "$defs": {
+    "presence": {
+      "type": "object",
+      "required": ["presence_id", "state", "expires_at"],
+      "properties": {
+        "presence_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,256}$" },
+        "state": { "enum": ["requested", "passed", "refused", "expired"] },
+        "verification_uri": { "type": "string", "pattern": "^https://app\\.botshield\\.ai/" },
+        "qr_code_uri": { "type": "string", "pattern": "^https://api\\.botshield\\.ai/" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "retry_after": { "type": "integer", "minimum": 1 }
+      },
+      "if": { "properties": { "state": { "const": "requested" } } },
+      "then": { "required": ["verification_uri", "retry_after"] }
+    }
+  }
+}
