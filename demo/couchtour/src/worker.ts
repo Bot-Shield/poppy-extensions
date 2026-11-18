@@ -86,9 +86,17 @@ async function refund(env: Env, session: Session, input: { toCardLast4: string; 
       await d.trace('refund', 'company', r.approval.state === 'requested' ? 'Asked the account holder through BotShield' : `The account holder's answer: ${r.approval.state}`, r.approval);
       return { done: false, approval: r.approval };
     }
-    const result = await r.perform(async () => ({ refunded: true, order_id: ORDER.id, amount: `$${total.toFixed(2)}`, to_card_last4: last4, at: new Date().toISOString() }));
-    await d.trace('refund', 'botshield', 'Signed answer checked once: the account holder approved these terms', { approval_id: r.approvalId });
-    await d.trace('refund', 'company', 'Refunded, once', result);
+    let ranNow = false;
+    const result = await r.perform(async () => {
+      ranNow = true;
+      return { refunded: true, order_id: ORDER.id, amount: `$${total.toFixed(2)}`, to_card_last4: last4, at: new Date().toISOString() };
+    });
+    if (ranNow) {
+      await d.trace('refund', 'botshield', 'Signed answer checked once: the account holder approved these terms', { approval_id: r.approvalId });
+      await d.trace('refund', 'company', 'Refunded, once', result);
+    } else {
+      await d.trace('refund', 'company', 'Already refunded: same result returned, nothing done again', result);
+    }
     return { done: true, result };
   } catch (e) {
     if (e instanceof NotLinkedError) return { done: false, error: 'This account is not linked to BotShield.', status: 403 };
