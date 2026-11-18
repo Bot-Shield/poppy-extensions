@@ -1,5 +1,7 @@
 # BotShield extensions for Poppy
 
+[![npm](https://img.shields.io/npm/v/@botshield/poppy)](https://www.npmjs.com/package/@botshield/poppy)
+
 Two extensions for the [Personal Agent Protocol](https://personalagentprotocol.org) ("Poppy"), so a
 Company can get a real person's yes when a personal agent is doing the asking.
 
@@ -63,6 +65,10 @@ The agent tells the person to check the BotShield app, then repeats the request 
 ## For Companies: `@botshield/poppy`
 
 The [package](packages/poppy) does the Company's side in Node.js, with no runtime dependencies.
+
+```sh
+npm install @botshield/poppy
+```
 
 ```ts
 import { BotShieldApi, AccountHolderApproval, approvalResponse, NotLinkedError } from '@botshield/poppy';
