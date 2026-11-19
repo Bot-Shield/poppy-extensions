@@ -34,6 +34,9 @@ extensions capture it. The account holder reads the terms on their own phone and
 passkey; the passkey signs what was shown, and BotShield gives the Company a signed answer for that
 one request, good once.
 
+BotShield is the witness, and a witness has to be independent of both sides. The answer is given
+outside the agent's reach, and the signed result comes from a party other than the one asking.
+
 Poppy names the gap. Its Operations extension relies on the agent's statement that the person
 approved, and Operations 8.1 says this "doesn't show that the User approved". Signed approvals are an
 open topic on Poppy's roadmap
