@@ -9,12 +9,13 @@ Poppy gets the agent in the door. These add what a Company needs before it acts:
 
 | The Company wants to know | What it gets | With |
 | --- | --- | --- |
+| **Does this agent belong to a human?** | A person confirms with their passkey, on their own phone, that the agent is acting for them. The Company gets yes or no, and no identity travels. | `botshield.ai/human-presence` · [SPEC](extensions/human-presence/SPEC.md) |
+| **Whose agent is it?** | The account holder approves an assistant once. At every order the Company asks, fresh: is this still that account holder's assistant? Match, or no match. | `botshield.ai/approval`, [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
 | **Did the account holder approve this?** | The account holder approved these **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
-| **Whose assistant is ordering?** | The account holder approves an assistant once. At every order the Company asks, fresh: is this still that account holder's assistant? Match, or no match. | `botshield.ai/approval`, [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
-| **Is this one person, counted once?** | A person confirms with their passkey and is counted once, however many agents or Sessions they use. Any limit the Company sets per person holds. | `botshield.ai/human-presence` · [SPEC](extensions/human-presence/SPEC.md) |
 
 BotShield is not the checkout, the wallet or the card. The Company takes the order and the payment
-rail takes the payment; these extensions answer who approved and whose assistant is asking. The
+rail takes the payment; these extensions answer whether a human is behind the agent, whose agent it
+is, and what the account holder approved. The
 personal agent never receives the account holder's identity.
 
 They follow Poppy 1.0's rules for third-party extensions (spec 3.3): they're named under a domain we
@@ -122,7 +123,7 @@ async function changePlan(account: string, clientId: string, approvalId: string 
 returns a status, headers and a body, so it fits any framework;
 [`reference/company.ts`](reference/company.ts) is a complete server built this way on `node:http`.
 
-### Whose assistant is ordering
+### Whose agent is it
 
 `AssistantGate` asks the account holder once whether an assistant may order for them, then checks at
 every order. The account holder can remove the assistant in the BotShield app at any time, and the
@@ -146,21 +147,22 @@ async function checkAssistant(account: string, session: { iss: string; sub: stri
 A match says whose assistant it is. For a yes to an order's exact terms, ask for it with
 `AccountHolderApproval`.
 
-### One person, counted once
+### Does this agent belong to a human
 
-`HumanPresence` counts a person once, however many agents or Sessions they use, so a per-person
-limit you set holds. It takes the verified Poppy Session, not an account, and it has no `perform`:
+`HumanPresence` asks a person to confirm, with their passkey, that the agent in this Session is
+acting for them. It takes the verified Poppy Session, not an account, and it has no `perform`. The
+gate's rule in the Console can also hold a limit you set per person:
 
 ```ts
 import { BotShieldApi, HumanPresence, PRESENCE_ID_HEADER, presenceResponse } from '@botshield/poppy';
 
 const api = new BotShieldApi({ secretKey: process.env.BOTSHIELD_SECRET_KEY! });
-const presence = new HumanPresence({ api, gate: 'one-per-person' });   // the key of a Human Gate in the Console
+const presence = new HumanPresence({ api, gate: 'agents' });   // the key of a Human Gate in the Console
 
-async function countOnce(session: { client: string; sid: string; user: string }, presenceId: string | null) {
+async function requireHuman(session: { client: string; sid: string; user: string }, presenceId: string | null) {
   const r = await presence.require({ session, presenceId });     // presenceId: the BotShield-Presence-Id header, or null
   if (!r.passed) return presenceResponse(r.presence);            // { status: 403, headers, body }
-  return { status: 200, headers: {}, body: { counted: true } };
+  return { status: 200, headers: {}, body: { ok: true } };
 }
 ```
 
@@ -180,7 +182,7 @@ repeats the call with the ID in `_meta` (`APPROVAL_ID_META`, `PRESENCE_ID_META`)
   is shown under. The account has to be BotShield Verified with you before its holder can be asked;
   `reference/company.ts` shows that one-time step (`/account/link`).
 - **To check whose assistant is ordering:** an Action with the key `assistant`.
-- **To count a person once:** a Human Gate in the Console, with its per-person rule.
+- **To ask whether an agent belongs to a human:** a Human Gate in the Console.
 - **A Company that speaks Poppy 1.0.** These extensions sit behind your own Session and token checks.
 
 ### Options
@@ -225,8 +227,8 @@ live BotShield environment** with the [reference Company and agent](reference) (
 
 | Run | Result |
 | --- | --- |
-| A person confirms with their passkey at a per-person limit | Counted |
-| The same person, a new Session, the same limit | Refused: already counted |
+| A person confirms with their passkey that the agent is acting for them | Passed |
+| The same person, a new Session, at a gate that allows one pass per person | Refused |
 | A gate that needs a verified phone number, account without one | Refused |
 | Plan change, account holder approves the exact terms in the BotShield app | Plan changed, once |
 
