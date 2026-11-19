@@ -3,21 +3,21 @@
 [![npm](https://img.shields.io/npm/v/@botshield/poppy)](https://www.npmjs.com/package/@botshield/poppy)
 
 Extensions for the [Personal Agent Protocol](https://personalagentprotocol.org) ("Poppy"), so a
-Company knows **a verified customer is making the purchase** when a personal agent is the one placing
-the order.
+Company knows **the agent belongs to a verified customer**, and that a verified customer is making
+the purchase.
 
-Poppy gets the agent in the door. The agent's word is all the Company has that a customer is behind
-it. These extensions give the Company the customer's own answer, with a passkey:
+Poppy gets the agent in the door. The agent's word is all the Company has for whose it is. With
+BotShield, the Company's customer is BotShield Verified with it: the account holder set up a passkey
+on their own phone, against their account at the Company. That account holder answers for the agent.
 
 | The Company knows | How | With |
 | --- | --- | --- |
-| **The agent belongs to a human.** | A person confirms with their passkey, on their own phone, that the agent is acting for them. The Company gets yes or no, and no identity travels. | `botshield.ai/human-presence` · [SPEC](extensions/human-presence/SPEC.md) |
-| **It is this verified customer's agent.** | The account holder approves an assistant once. At every order the Company asks, fresh: is this still that account holder's assistant? Match, or no match. | `botshield.ai/approval`, [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
-| **The customer approved this order or change.** | The account holder approved these **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
+| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? Match, or no match. | `botshield.ai/approval`, [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
+| **The verified customer approved this order or change.** | The account holder approves the **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
 
 BotShield is not the checkout, the wallet or the card. The Company takes the order and the payment
-rail takes the payment; these extensions tell the Company that a verified customer is behind the order. The
-personal agent never receives the account holder's identity.
+rail takes the payment. The agent binds to an ID that is unique to the Company and never receives
+the account holder's identity.
 
 They follow Poppy 1.0's rules for third-party extensions (spec 3.3): they're named under a domain we
 control, they're optional, and a side that doesn't support them ignores them.
@@ -124,7 +124,7 @@ async function changePlan(account: string, clientId: string, approvalId: string 
 returns a status, headers and a body, so it fits any framework;
 [`reference/company.ts`](reference/company.ts) is a complete server built this way on `node:http`.
 
-### A verified customer's agent
+### The agent belongs to a verified customer
 
 `AssistantGate` asks the account holder once whether an assistant may order for them, then checks at
 every order. The account holder can remove the assistant in the BotShield app at any time, and the
@@ -148,11 +148,11 @@ async function checkAssistant(account: string, session: { iss: string; sub: stri
 A match says whose assistant it is. For a yes to an order's exact terms, ask for it with
 `AccountHolderApproval`.
 
-### The agent belongs to a human
+### A Session with no signed-in account
 
-`HumanPresence` asks a person to confirm, with their passkey, that the agent in this Session is
-acting for them. It takes the verified Poppy Session, not an account, and it has no `perform`. The
-gate's rule in the Console can also hold a limit you set per person:
+The repository also carries `botshield.ai/human-presence` ([SPEC](extensions/human-presence/SPEC.md)),
+for a Session where no account is signed in yet. `HumanPresence` asks a person to confirm with their
+passkey. It takes the verified Poppy Session, not an account, and it has no `perform`:
 
 ```ts
 import { BotShieldApi, HumanPresence, PRESENCE_ID_HEADER, presenceResponse } from '@botshield/poppy';
@@ -182,8 +182,8 @@ repeats the call with the ID in `_meta` (`APPROVAL_ID_META`, `PRESENCE_ID_META`)
 - **For approvals:** an Action in the Console (its key, here `plan`), and an agent name the request
   is shown under. The account has to be BotShield Verified with you before its holder can be asked;
   `reference/company.ts` shows that one-time step (`/account/link`).
-- **To check whose assistant is ordering:** an Action with the key `assistant`.
-- **To ask whether an agent belongs to a human:** a Human Gate in the Console.
+- **To know the agent belongs to a verified customer:** an Action with the key `assistant`.
+- **For a Session with no signed-in account:** a Human Gate in the Console.
 - **A Company that speaks Poppy 1.0.** These extensions sit behind your own Session and token checks.
 
 ### Options
