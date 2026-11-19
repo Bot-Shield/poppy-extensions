@@ -15,10 +15,18 @@
     "DEMO_HOST": "poppy-demo.couchtour.app",
     "DEMO_AGENT_NAME": "couchtour",
     "DEMO_REFUND_ACTION": "refund",
+    // The phone number change, live. It reuses the refund action key until its own action is placed
+    // in the Console; then set its key here.
+    "DEMO_PHONE_ACTION": "refund",
     "DEMO_PRESENCE_GATE": "poppy-demo-redrocks",
     "DEMO_LINK_GATE": "poppy-demo-link-2"
   },
-  // Secrets: BOTSHIELD_SECRET_KEY (the demo company's bs_ key), DEMO_ACCOUNT_REF (the linked demo account).
+  // Secrets: BOTSHIELD_SECRET_KEY (the demo company's bs_ key), DEMO_ACCOUNT_REF (the linked demo account),
+  // DEMO_LIVE_KEY, DEMO_ADMIN_TOKEN, and ANTHROPIC_API_KEY (the demo agent's model).
+  // Logos and icons, served from this Worker (not hotlinked).
+  "assets": { "directory": "./public" },
+  // The demo agent and Couch Tour share this host, so they reach each other through this binding.
+  "services": [{ "binding": "SELF", "service": "couchtour-poppy-demo" }],
   "durable_objects": { "bindings": [{ "name": "STATE", "class_name": "DemoState" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DemoState"] }],
   "observability": { "enabled": true }

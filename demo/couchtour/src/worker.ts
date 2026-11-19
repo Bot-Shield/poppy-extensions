@@ -1,249 +1,243 @@
 /**
- * Couch Tour · Poppy demo. A demo Couch Tour that speaks the Personal Agent Protocol and uses
- * BotShield's extensions, so a viewer can watch the BotShield part of each flow:
+ * Couch Tour · Poppy demo. One Worker plays three parts, kept apart in code:
  *
- *   POST /api/refunds        botshield.ai/approval   the account holder approves the exact refund
- *   POST /api/presale/enter  botshield.ai/human-presence   one entry per person
- *   POST /mcp                the same two, as MCP tools, for any MCP client (no Poppy needed)
- *   GET  /.well-known/poppy.json
- *   GET  /api/trace          what happened, for the demo page
+ *   company.ts       Couch Tour (demo), a Poppy Company: discovery, sign-in, Sessions, APIs, a Company Agent
+ *   agent.ts         a Personal Agent driven by Claude, making real Poppy requests to Couch Tour
+ *   simBotShield.ts  a SIMULATED BotShield for public visitors (live mode, with the demo key, uses the real one)
  *
- * DEMO ONLY. A real Company verifies the Poppy Session header (spec 5.3) and the access token
- * (spec 7). Here one demo account is signed in, and the Session comes from `X-Demo-*` headers or the
- * MCP session. Nothing here touches Couch Tour's production service.
+ * and the page at `/` shows the traffic between them, Atlas-style.
+ *
+ * Routes kept from the first demo: POST /mcp (needs the demo key), POST /api/refunds and
+ * POST /api/presale/enter without a Poppy-Session (needs the demo key: live), GET /api/trace,
+ * /api/admin/link*, POST /api/reset.
+ *
+ * Nothing here touches Couch Tour's production service.
  */
-import {
-  AccountHolderApproval, BotShieldApi, HumanPresence, NotLinkedError, StillPerformingError, isTransient,
-  APPROVAL_ID_HEADER, PRESENCE_ID_HEADER, APPROVAL_ID_META, PRESENCE_ID_META,
-  approvalResponse, approvalToolResult, presenceResponse, presenceToolResult,
-  type ApprovalObject, type PresenceObject,
-} from '../../../packages/poppy/src/index.ts';
-import { DemoState, doStore, type TraceEntry } from './state.ts';
+import { BotShieldApi, APPROVAL_ID_HEADER, PRESENCE_ID_HEADER, APPROVAL_ID_META, PRESENCE_ID_META, approvalToolResult, presenceToolResult } from '../../../packages/poppy/src/index.ts';
+import { DemoState } from './state.ts';
 import { demoPage } from './page.ts';
+import { setLocalHandler } from './net.ts';
+import { Collector } from './trace.ts';
+import {
+  authServerMetadata, authorize, asHttp, changePhone, companyApi, deps, enterPresale, json, liveAllowed, openApi, poppyJson, protectedResource, refund, stubOf, visitorHash,
+  type Outcome,
+} from './company.ts';
+import { agentJwks, clientMetadata, events, loadCtx, poll, resumeAfterSignIn, signInCallback, signInWithPhone, signOut, startChat, userMessage, validChatId, type AgentEnv } from './agent.ts';
+import { phoneAnswer, phoneInbox } from './simBotShield.ts';
 
 export { DemoState };
 
-export interface Env {
-  STATE: DurableObjectNamespace<DemoState>;
-  BOTSHIELD_API_URL: string;
-  BOTSHIELD_SECRET_KEY: string;
-  DEMO_ACCOUNT_REF: string;
-  DEMO_HOST: string;
-  DEMO_AGENT_NAME: string;
-  DEMO_REFUND_ACTION: string;
-  DEMO_PRESENCE_GATE: string;
-  /** A gate whose link setting is `required`: the one-time tap that links the demo account. */
+export interface Env extends AgentEnv {
   DEMO_LINK_GATE: string;
   DEMO_ADMIN_TOKEN?: string;
-  /** Live calls reach the presenter's phone, so they need this key (header X-Demo-Key, or ?key=). */
-  DEMO_LIVE_KEY?: string;
 }
 
-/** Live endpoints send real requests to the presenter's phone: only with the demo key. */
-function liveAllowed(req: Request, env: Env): boolean {
-  const key = req.headers.get('X-Demo-Key') ?? new URL(req.url).searchParams.get('key');
-  return !!env.DEMO_LIVE_KEY && key === env.DEMO_LIVE_KEY;
+const CHATS_PER_HOUR = 20;
+const VALIDATOR = 'https://poppydemoagent.dev/validator/api';
+
+const pub = (body: unknown) => json(body, 200, { 'Cache-Control': 'public, max-age=300', 'Access-Control-Allow-Origin': '*' });
+const html = (body: string, cache = 'no-store') => new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': cache } });
+const validVid = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(v);
+
+async function handle(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const GET = req.method === 'GET';
+
+  // Discovery (spec 3, 3.2, 7) and the agent's own documents (spec 4.1).
+  if (GET && path === '/.well-known/poppy.json') return pub(poppyJson(env));
+  if (GET && path === '/.well-known/oauth-protected-resource') return pub(protectedResource(env));
+  if (GET && path === '/.well-known/oauth-authorization-server') return pub(authServerMetadata(env));
+  if (GET && path === '/openapi.json') return pub(openApi(env));
+  if (GET && path === '/agent/client.json') return pub(clientMetadata(env));
+  if (GET && path === '/agent/jwks.json') return pub(await agentJwks(env));
+
+  if (path === '/oauth/authorize' && (GET || req.method === 'POST')) return authorize(req, env);
+  const company = await companyApi(req, env);
+  if (company) return company;
+
+  // The agent's sign-in redirect lands here, inside the page's sign-in sheet.
+  if (GET && path === '/agent/callback') {
+    const r = await signInCallback(env, url);
+    return html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed in</title><body style="font:15px system-ui;padding:24px">${r.message}<script>parent.postMessage({type:'signin-done',chat:${JSON.stringify(r.chat)},ok:${r.ok}},location.origin)</script>`);
+  }
+
+  // The page's calls to its agent.
+  const m = /^\/agent\/chat\/([^/]+)\/(start|message|resume|poll|signout|signin-phone|events)$/.exec(path);
+  if (m) return chatRoute(req, env, m[1], m[2]);
+  if (req.method === 'POST' && path === '/agent/reset') {
+    const b = (await req.json().catch(() => ({}))) as { vid?: string };
+    if (!validVid(b.vid)) return json({ error: 'bad_request' }, 400);
+    const vh = await visitorHash(b.vid);
+    const stub = stubOf(env);
+    for (const k of [`vtok:${vh}`, `acct:fan_${vh}`]) await stub.kvDel(k);
+    await stub.kvDelPrefix(`sim:inbox:${vh}:`);
+    for (const g of await stub.kvList('sim:gate:')) if (g.endsWith(`:${vh}`)) await stub.kvDel(`sim:gate:${g}`);
+    return json({ reset: true });
+  }
+
+  // The simulated BotShield app (the second phone).
+  if (GET && path === '/sim/phone') {
+    const vid = url.searchParams.get('vid');
+    if (!validVid(vid)) return json({ error: 'bad_request' }, 400);
+    return json({ items: await phoneInbox(stubOf(env), await visitorHash(vid)) });
+  }
+  if (req.method === 'POST' && path === '/sim/phone/answer') {
+    const b = (await req.json().catch(() => ({}))) as { vid?: string; request_id?: string; answer?: string };
+    if (!validVid(b.vid) || typeof b.request_id !== 'string' || (b.answer !== 'confirm' && b.answer !== 'deny')) return json({ error: 'bad_request' }, 400);
+    const r = await phoneAnswer(stubOf(env), await visitorHash(b.vid), { request_id: b.request_id, answer: b.answer });
+    if (r.ok && r.chat && validChatId(r.chat)) {
+      const approval = r.kind === 'approval';
+      const title = approval
+        ? (r.outcome === 'approved' ? 'The account holder approves, with their passkey' : 'The account holder taps "This isn\'t me"')
+        : (b.answer === 'confirm' ? 'A person confirms, with their passkey' : 'The person declines');
+      const result = approval ? (r.outcome === 'approved' ? 'BotShield signs the answer for Couch Tour' : 'Declined') : r.outcome === 'passed' ? 'Counted once at this gate' : r.outcome === 'already_counted' ? 'Already counted at this gate: refused' : 'Declined';
+      await stubOf(env).append(`ev:${r.chat}`, { kind: 'row', lane: 'phone', title, result, simulated: true, tags: [{ s: approval ? 'approval § 8' : 'presence § 7', ext: approval ? 'approval' : 'presence' }], agentNotes: ['Simulated: in the real flow this happens in the BotShield app, on the account holder\'s own phone.'] });
+    }
+    return json({ ok: r.ok, outcome: r.outcome ?? null });
+  }
+
+  // "Validated against Poppy Draft 1.0": the public validator's verdict on this host, cached 5 minutes.
+  if (GET && path === '/api/validate') {
+    const stub = stubOf(env);
+    const cached = await stub.kvGet<unknown>('validator');
+    if (cached && !url.searchParams.has('fresh')) return json(cached);
+    const res = await fetch(VALIDATOR, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: env.DEMO_HOST }) });
+    const body = { checked_at: new Date().toISOString(), validator: VALIDATOR, status: res.status, result: await res.json().catch(() => null) };
+    if (res.ok) await stub.kvPut('validator', body, 300_000);
+    return json(body);
+  }
+
+  // ── Kept from the first demo ─────────────────────────────────────────────────────────────────
+  const legacy = path === '/mcp' || path === '/api/refunds' || path === '/api/presale/enter' || path === '/api/trace';
+  if (legacy && !liveAllowed(req, env)) {
+    return json({ error: 'demo_key_required', error_description: 'Live calls reach the presenter\'s phone. Try the simulated demo at /.' }, 401);
+  }
+  if (req.method === 'POST' && path === '/api/refunds') {
+    const body = (await req.json().catch(() => ({}))) as { to_card_last4?: string };
+    const c = new Collector();
+    const o = await refund(env, deps(env, true, c, { vh: 'legacy' }), c, { account: 'fan_legacy', client: req.headers.get('X-Demo-Client') ?? 'https://agent.example/agent.json', toCardLast4: String(body.to_card_last4 ?? ''), approvalId: req.headers.get(APPROVAL_ID_HEADER) });
+    await legacyTrace(env, 'refund', c, o);
+    return asHttp(o);
+  }
+  if (req.method === 'POST' && path === '/api/presale/enter') {
+    const c = new Collector();
+    const session = { client: req.headers.get('X-Demo-Client') ?? 'https://agent.example/agent.json', sid: req.headers.get('X-Demo-Sid') ?? 'demo-sid', user: req.headers.get('X-Demo-User') ?? 'usr_demo' };
+    const o = await enterPresale(env, deps(env, true, c, { vh: 'legacy' }), c, { account: `fan_legacy_${session.user}`, session, presenceId: req.headers.get(PRESENCE_ID_HEADER) });
+    await legacyTrace(env, 'presale', c, o);
+    return asHttp(o);
+  }
+  if (path === '/mcp') return mcp(req, env);
+  if (GET && path === '/api/trace') return json(await stubOf(env).traces());
+  if (path.startsWith('/api/admin/link')) {
+    if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
+    const api = new BotShieldApi({ secretKey: env.BOTSHIELD_SECRET_KEY, baseUrl: env.BOTSHIELD_API_URL });
+    if (req.method === 'POST' && path === '/api/admin/link') {
+      const c = await api.startGateCheck({ gate: env.DEMO_LINK_GATE, partnerUserRef: env.DEMO_ACCOUNT_REF });
+      return json({ request_id: c.request_id, verification_uri: c.web_url, expires_at: c.expires_at });
+    }
+    const rid = url.searchParams.get('request_id');
+    if (req.method === 'POST' && path === '/api/admin/link/confirm' && rid) return json({ link: await api.confirmLink({ requestId: rid, partnerUserRef: env.DEMO_ACCOUNT_REF }) });
+  }
+  if (req.method === 'POST' && path === '/api/reset') {
+    if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
+    await stubOf(env).reset();
+    return json({ reset: true });
+  }
+
+  if (GET && (path === '/' || path === '/index.html')) return html(demoPage(), 'public, max-age=60');
+  return json({ error: 'not_found' }, 404);
 }
 
-/** The demo order: what a refund would return. */
-const ORDER = {
-  id: 'ord_RW-4417',
-  show: 'Rising Wave Live · Red Rocks',
-  date: 'Fri, Dec 5',
-  tickets: 2,
-  each: 48,
-  originalCard: '0912',
-};
-
-type Session = { client: string; sid: string; user: string };
-
-function deps(env: Env) {
-  const stub = env.STATE.get(env.STATE.idFromName('demo'));
-  const api = new BotShieldApi({ secretKey: env.BOTSHIELD_SECRET_KEY, baseUrl: env.BOTSHIELD_API_URL });
-  return {
-    stub,
-    approvals: new AccountHolderApproval({ api, agent: env.DEMO_AGENT_NAME, actionKey: env.DEMO_REFUND_ACTION, store: doStore(stub, 'approval') }),
-    presence: new HumanPresence({ api, gate: env.DEMO_PRESENCE_GATE, store: doStore(stub, 'presence') }),
-    trace: (flow: string, lane: TraceEntry['lane'], title: string, detail?: unknown) =>
-      stub.trace({ at: new Date().toISOString(), flow, lane, title, ...(detail === undefined ? {} : { detail }) }),
-  };
+async function legacyTrace(env: Env, flow: string, c: Collector, o: Outcome) {
+  const stub = stubOf(env);
+  const at = new Date().toISOString();
+  for (const n of c.notes) await stub.trace({ at, flow, lane: 'company', title: n });
+  await stub.trace({ at, flow, lane: 'company', title: o.done ? 'Done' : 'approval' in o ? `Approval: ${o.approval.state}` : 'presence' in o ? `Presence: ${o.presence.state}` : `Not done: ${o.error}` });
 }
 
-// ── The two actions, shared by the API and the MCP tools ─────────────────────────────────────────
-
-type Outcome<T> = { done: true; result: T } | { done: false; approval: ApprovalObject } | { done: false; presence: PresenceObject } | { done: false; error: string; status: number };
-
-async function refund(env: Env, session: Session, input: { toCardLast4: string; approvalId: string | null }): Promise<Outcome<Record<string, unknown>>> {
-  const d = deps(env);
-  const last4 = String(input.toCardLast4 ?? '').replace(/\D/g, '').slice(-4);
-  if (last4.length !== 4) return { done: false, error: 'to_card_last4 must be four digits', status: 400 };
-  const total = ORDER.tickets * ORDER.each;
-  await d.trace('refund', 'assistant', `Refund ${ORDER.tickets} tickets to card ending ${last4}`, { order_id: ORDER.id, to_card_last4: last4, approval_id: input.approvalId });
+async function chatRoute(req: Request, env: Env, id: string, action: string): Promise<Response> {
+  if (!validChatId(id)) return json({ error: 'bad_chat_id' }, 400);
+  if (action === 'events') {
+    if (req.method !== 'GET') return json({ error: 'method' }, 405);
+    return json({ events: await events(env, id, Number(new URL(req.url).searchParams.get('after') ?? 0) || 0) });
+  }
+  if (req.method !== 'POST') return json({ error: 'method' }, 405);
+  const stub = stubOf(env);
+  const body = (await req.json().catch(() => ({}))) as { vid?: string; text?: string; key?: string; phone?: string };
+  // One run at a time per chat.
+  if (!(await stub.kvAdd(`busy:${id}`, 1, 120_000))) return json({ error: 'busy' }, 409);
   try {
-    const r = await d.approvals.require<Record<string, unknown>>({
-      account: env.DEMO_ACCOUNT_REF,
-      client: session.client,
-      approvalId: input.approvalId,
-      meaning: { order: ORDER.id, to: last4 },
-      summary: `Refund ${ORDER.tickets} tickets to a **different card**, ending ${last4}.`,
-      terms: [
-        { label: 'Show', value: `${ORDER.show} · ${ORDER.date}` },
-        { label: 'Tickets', value: `${ORDER.tickets} × $${ORDER.each.toFixed(2)}` },
-        { label: 'Refund to', value: `Card ending ${last4} (paid with ${ORDER.originalCard})` },
-        { label: 'Total', value: `$${total.toFixed(2)}` },
-      ],
-    });
-    if (!r.approved) {
-      await d.trace('refund', 'company', r.approval.state === 'requested' ? 'Asked the account holder through BotShield' : `The account holder's answer: ${r.approval.state}`, r.approval);
-      return { done: false, approval: r.approval };
+    if (action === 'start') {
+      if (!validVid(body.vid)) return json({ error: 'bad_request' }, 400);
+      const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+      const rl = await stub.hit(`rl:${await visitorHash(ip)}`, CHATS_PER_HOUR, 3600_000);
+      if (!rl.ok) return json({ error: 'rate_limited', error_description: `This demo allows ${CHATS_PER_HOUR} sessions an hour from one network. Try again later.` }, 429, { 'Retry-After': '600' });
+      const live = !!env.DEMO_LIVE_KEY && body.key === env.DEMO_LIVE_KEY;
+      if (body.key && !live) return json({ error: 'demo_key_invalid' }, 401);
+      const ctx = await startChat(env, id, body.vid, live);
+      return json({ ok: true, mode: ctx.chat.mode });
     }
-    let ranNow = false;
-    const result = await r.perform(async () => {
-      ranNow = true;
-      return { refunded: true, order_id: ORDER.id, amount: `$${total.toFixed(2)}`, to_card_last4: last4, at: new Date().toISOString() };
-    });
-    if (ranNow) {
-      await d.trace('refund', 'botshield', 'Signed answer checked once: the account holder approved these terms', { approval_id: r.approvalId });
-      await d.trace('refund', 'company', 'Refunded, once', result);
-    } else {
-      await d.trace('refund', 'company', 'Already refunded: same result returned, nothing done again', result);
+    const ctx = await loadCtx(env, id);
+    if (!ctx) return json({ error: 'no_chat' }, 404);
+    if (action === 'message') {
+      const text = String(body.text ?? '').trim().slice(0, 500);
+      if (!text) return json({ error: 'empty' }, 400);
+      await userMessage(ctx, text);
+      return json({ ok: true, pending: !!ctx.chat.pending });
     }
-    return { done: true, result };
+    if (action === 'resume') { await resumeAfterSignIn(ctx); return json({ ok: true, pending: !!ctx.chat.pending }); }
+    if (action === 'poll') return json(await poll(ctx));
+    if (action === 'signin-phone') {
+      const phone = String(body.phone ?? '').slice(0, 32);
+      if (!(await signInWithPhone(ctx, phone))) return json({ ok: false, error: 'sign_in_failed' });
+      await resumeAfterSignIn(ctx);
+      return json({ ok: true, pending: !!ctx.chat.pending });
+    }
+    if (action === 'signout') { await signOut(ctx); return json({ ok: true }); }
+    return json({ error: 'not_found' }, 404);
   } catch (e) {
-    if (e instanceof NotLinkedError) return { done: false, error: 'This account is not linked to BotShield.', status: 403 };
-    if (e instanceof StillPerformingError) return { done: false, error: 'in_progress', status: 503 };
-    if (isTransient(e)) return { done: false, error: 'unavailable', status: 503 };
-    throw e;
+    console.error('[chat]', action, e instanceof Error ? e.message : String(e));
+    await stub.append(`ev:${id}`, { kind: 'say', role: 'system', text: 'Something went wrong in the demo. Start a new session to try again.' });
+    return json({ error: 'server_error' }, 500);
+  } finally {
+    await stub.kvDel(`busy:${id}`);
   }
 }
 
-async function enterPresale(env: Env, session: Session, presenceId: string | null): Promise<Outcome<Record<string, unknown>>> {
-  const d = deps(env);
-  await d.trace('presale', 'assistant', `Enter the presale for ${ORDER.show}`, { presence_id: presenceId });
-  try {
-    const r = await d.presence.require({ session, presenceId });
-    if (!r.passed) {
-      await d.trace('presale', 'company', r.presence.state === 'requested' ? 'A person must confirm: link sent' : `Check ended: ${r.presence.state}`, r.presence);
-      return { done: false, presence: r.presence };
-    }
-    const result = { entered: true, show: ORDER.show, at: new Date().toISOString() };
-    await d.trace('presale', 'botshield', 'Signed answer checked once: a person was present, counted once');
-    await d.trace('presale', 'company', 'Entered', result);
-    return { done: true, result };
-  } catch (e) {
-    if (isTransient(e)) return { done: false, error: 'unavailable', status: 503 };
-    throw e;
-  }
-}
-
-// ── HTTP ─────────────────────────────────────────────────────────────────────────────────────────
-
-const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body, null, 2), { status, headers: { 'Content-Type': 'application/json', ...headers } });
-
-function asHttp<T>(o: Outcome<T>): Response {
-  if (o.done) return json(o.result);
-  if ('approval' in o) { const r = approvalResponse(o.approval); return json(r.body, r.status, r.headers); }
-  if ('presence' in o) { const r = presenceResponse(o.presence); return json(r.body, r.status, r.headers); }
-  return json({ error: o.error }, o.status, o.status === 503 ? { 'Retry-After': '5' } : {});
-}
-
-function sessionFrom(req: Request): Session {
-  return {
-    client: req.headers.get('X-Demo-Client') ?? 'https://agent.example/agent.json',
-    sid: req.headers.get('X-Demo-Sid') ?? 'demo-sid',
-    user: req.headers.get('X-Demo-User') ?? 'usr_demo',
-  };
-}
-
-function poppyJson(env: Env) {
-  const origin = `https://${env.DEMO_HOST}`;
-  return {
-    protocol_version: '1.0',
-    organization: { name: 'Couch Tour (demo)', domain: env.DEMO_HOST },
-    apis: [
-      { type: 'openapi', url: `${origin}/openapi.json`, description: 'Refunds and presale entries (demo)' },
-      { type: 'mcp', url: `${origin}/mcp`, description: 'Refunds and presale entries (demo)' },
-    ],
-    extensions: { 'botshield.ai/approval': [{ version: '1' }], 'botshield.ai/human-presence': [{ version: '1' }] },
-  };
-}
-
-export default {
+const handler = {
   async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
+    setLocalHandler((r) => handle(r, env));
     try {
-      if (req.method === 'GET' && url.pathname === '/.well-known/poppy.json') return json(poppyJson(env));
-      const live = url.pathname === '/mcp' || url.pathname === '/api/refunds' || url.pathname === '/api/presale/enter' || url.pathname === '/api/trace';
-      if (live && !liveAllowed(req, env)) {
-        return json({ error: 'demo_key_required', error_description: 'Live calls reach the presenter\'s phone. Watch the recorded runs at /.' }, 401);
-      }
-      if (req.method === 'POST' && url.pathname === '/api/refunds') {
-        const body = (await req.json().catch(() => ({}))) as { to_card_last4?: string };
-        return asHttp(await refund(env, sessionFrom(req), { toCardLast4: String(body.to_card_last4 ?? ''), approvalId: req.headers.get(APPROVAL_ID_HEADER) }));
-      }
-      if (req.method === 'POST' && url.pathname === '/api/presale/enter') {
-        return asHttp(await enterPresale(env, sessionFrom(req), req.headers.get(PRESENCE_ID_HEADER)));
-      }
-      if (url.pathname === '/mcp') return mcp(req, env);
-      if (req.method === 'GET' && url.pathname === '/api/trace') return json(await deps(env).stub.traces());
-      // Setup, admin only: link the demo account to the presenter's BotShield ID (one passkey tap),
-      // then confirm it (keys whose links wait for the server's confirm).
-      if (url.pathname.startsWith('/api/admin/link')) {
-        if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
-        const api = new BotShieldApi({ secretKey: env.BOTSHIELD_SECRET_KEY, baseUrl: env.BOTSHIELD_API_URL });
-        if (req.method === 'POST' && url.pathname === '/api/admin/link') {
-          const c = await api.startGateCheck({ gate: env.DEMO_LINK_GATE, partnerUserRef: env.DEMO_ACCOUNT_REF });
-          return json({ request_id: c.request_id, verification_uri: c.web_url, expires_at: c.expires_at });
-        }
-        const rid = url.searchParams.get('request_id');
-        if (req.method === 'POST' && url.pathname === '/api/admin/link/confirm' && rid) {
-          return json({ link: await api.confirmLink({ requestId: rid, partnerUserRef: env.DEMO_ACCOUNT_REF }) });
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/reset') {
-        if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
-        await deps(env).stub.reset();
-        return json({ reset: true });
-      }
-      if (req.method === 'GET' && url.pathname === '/') {
-        return new Response(demoPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' } });
-      }
-      return json({ error: 'not_found' }, 404);
+      return await handle(req, env);
     } catch (e) {
       console.error('[demo]', e instanceof Error ? e.message : String(e));
       return json({ error: 'server_error' }, 500);
     }
   },
 };
+export default handler;
 
-// ── MCP (Streamable HTTP, JSON responses; protocol 2025-06-18) ───────────────────────────────────
+// ── MCP (Streamable HTTP, JSON responses; protocol 2025-06-18). Needs the demo key: live. ─────────
 
 const TOOLS = [
   {
     name: 'request_refund',
     description:
-      `Refund the customer's ${ORDER.tickets} tickets for ${ORDER.show} (${ORDER.date}) to a card. ` +
+      'Refund the customer\'s 2 tickets for Rising Wave Live · Red Rocks (Fri, Dec 5) to a card. ' +
       'A refund to a different card than the one paid with needs the account holder\'s approval in the BotShield app on their phone; ' +
       'if the result says so, tell the user to approve there, then call this tool again with the approval_id.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        to_card_last4: { type: 'string', description: 'Last four digits of the card to refund to.' },
-        approval_id: { type: 'string', description: 'From an earlier result, when repeating the request.' },
-      },
-      required: ['to_card_last4'],
-    },
+    inputSchema: { type: 'object', properties: { to_card_last4: { type: 'string', description: 'Last four digits of the card to refund to.' }, approval_id: { type: 'string', description: 'From an earlier result, when repeating the request.' } }, required: ['to_card_last4'] },
   },
   {
     name: 'enter_presale',
-    description:
-      `Enter the customer in the presale for ${ORDER.show}. One entry per person. ` +
-      'If the result has a link, show it to the user to confirm in the BotShield app, then call this tool again with the presence_id.',
-    inputSchema: {
-      type: 'object',
-      properties: { presence_id: { type: 'string', description: 'From an earlier result, when repeating the request.' } },
-    },
+    description: 'Enter the customer in the presale for Rising Wave Live · Red Rocks. One entry per person. If the result has a link, show it to the user to confirm in the BotShield app, then call this tool again with the presence_id.',
+    inputSchema: { type: 'object', properties: { presence_id: { type: 'string', description: 'From an earlier result, when repeating the request.' } } },
+  },
+  {
+    name: 'update_phone',
+    description: 'Change the phone number on the customer\'s Couch Tour account. It needs the account holder\'s approval in the BotShield app on their phone; if the result says so, tell the user to approve there, then call this tool again with the same number and the approval_id.',
+    inputSchema: { type: 'object', properties: { phone_number: { type: 'string', description: 'The new number, e.g. "303 555 0141".' }, approval_id: { type: 'string', description: 'From an earlier result, when repeating the request.' } }, required: ['phone_number'] },
   },
 ];
 
@@ -251,17 +245,12 @@ async function mcp(req: Request, env: Env): Promise<Response> {
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   const msg = (await req.json().catch(() => null)) as { id?: unknown; method?: string; params?: any } | null;
   if (!msg || typeof msg.method !== 'string') return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, 400);
-  if (msg.id === undefined) return new Response(null, { status: 202 }); // a notification
+  if (msg.id === undefined) return new Response(null, { status: 202 });
   const reply = (result: unknown) => json({ jsonrpc: '2.0', id: msg.id, result });
   const mcpSession = req.headers.get('Mcp-Session-Id') ?? 'mcp';
-
   switch (msg.method) {
     case 'initialize':
-      return json(
-        { jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'couchtour-poppy-demo', version: '0.1.0' } } },
-        200,
-        { 'Mcp-Session-Id': crypto.randomUUID() },
-      );
+      return json({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'couchtour-poppy-demo', version: '0.2.0' } } }, 200, { 'Mcp-Session-Id': crypto.randomUUID() });
     case 'ping':
       return reply({});
     case 'tools/list':
@@ -270,15 +259,12 @@ async function mcp(req: Request, env: Env): Promise<Response> {
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
       const meta = msg.params?._meta ?? {};
-      const session: Session = { client: 'mcp-client', sid: mcpSession, user: 'usr_mcp' };
-      if (name === 'request_refund') {
-        const o = await refund(env, session, { toCardLast4: String(args.to_card_last4 ?? ''), approvalId: args.approval_id ?? meta[APPROVAL_ID_META] ?? null });
-        return reply(toolResult(o));
-      }
-      if (name === 'enter_presale') {
-        const o = await enterPresale(env, session, args.presence_id ?? meta[PRESENCE_ID_META] ?? null);
-        return reply(toolResult(o));
-      }
+      const c = new Collector();
+      const d = deps(env, true, c, { vh: 'mcp' });
+      const client = 'mcp-client';
+      if (name === 'request_refund') return reply(toolResult(await refund(env, d, c, { account: 'fan_mcp', client, toCardLast4: String(args.to_card_last4 ?? ''), approvalId: args.approval_id ?? meta[APPROVAL_ID_META] ?? null })));
+      if (name === 'enter_presale') return reply(toolResult(await enterPresale(env, d, c, { account: 'fan_mcp', session: { client, sid: mcpSession, user: 'usr_mcp' }, presenceId: args.presence_id ?? meta[PRESENCE_ID_META] ?? null })));
+      if (name === 'update_phone') return reply(toolResult(await changePhone(env, d, c, { account: 'fan_mcp', client, phone: String(args.phone_number ?? ''), approvalId: args.approval_id ?? meta[APPROVAL_ID_META] ?? null })));
       return json({ jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: `Unknown tool: ${name}` } });
     }
     default:
@@ -286,11 +272,10 @@ async function mcp(req: Request, env: Env): Promise<Response> {
   }
 }
 
-function toolResult<T>(o: Outcome<T>) {
+function toolResult(o: Outcome) {
   if (o.done) return { content: [{ type: 'text', text: JSON.stringify(o.result) }], structuredContent: o.result };
   if ('approval' in o) {
     const r = approvalToolResult(o.approval);
-    // Say the id the model must send back, in words a model will follow.
     r.content[0].text += o.approval.state === 'requested' ? ` (approval_id: ${o.approval.approval_id})` : '';
     return r;
   }

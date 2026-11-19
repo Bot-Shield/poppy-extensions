@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `demo/couchtour` (poppy-demo.couchtour.app) rebuilt as a live, Atlas-style demo. A Personal Agent
+  driven by Claude makes real Poppy requests to the demo Couch Tour, and the page shows each one:
+  discovery, Sessions with delegated keys, Direct Sign-In (PKCE) or Mediated Sign-In by phone, the
+  APIs, and the BotShield steps. Couch Tour is now a signed-in Poppy Company: protected resource and
+  issuer metadata, an OAuth authorization server, Session verification, a Company Agent, and a new
+  operation, changing the phone number on file, approved by the account holder (`update_phone` in
+  MCP too). Public visitors get a simulated BotShield inside the Worker; the demo key switches to
+  live. The recorded replays are gone. The extensions' wire format is unchanged.
+
 ## 0.2.1 · 2026-11-18
 
 - `botshield.ai/human-presence`: the presence object no longer carries `qr_code_uri`; that address
