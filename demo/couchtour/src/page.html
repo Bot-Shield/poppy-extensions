@@ -42,7 +42,7 @@ a{color:inherit}
 .top{height:54px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel);position:relative;z-index:20}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:17px;white-space:nowrap}
 .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none}
-.av.agent{background:var(--agent)}.av.ct{background:var(--ct);border-radius:8px}.av.bs{background:var(--bs);border-radius:8px}
+.av.agent{background:var(--agent)}.av.ct{background:var(--ct);border-radius:8px}.av.bs{background:#0b1f2a;border-radius:8px}.av.bs .bsmark{width:18px;height:auto;display:block}
 .pill{font-size:12.5px;padding:4px 10px;border-radius:99px;background:var(--soft);color:var(--muted);white-space:nowrap;border:0}
 .pill.in{background:#e6f4ec;color:#2f7a52}.pill.out{background:var(--sim-tint);color:var(--sim)}
 :root[data-theme="dark"] .pill.in{background:#16301f;color:#5fd39a}
@@ -292,7 +292,7 @@ a{color:inherit}
       <div class="actors">
         <div><span class="av agent">A</span><span class="nm">Your agent</span></div><div></div>
         <div><span class="lockup sm" title="Couch Tour (demo)"><img class="mk" src="/img/couchtour-mark.svg" width="33" height="23" alt=""><img class="wm" src="/img/couchtour-wordmark.svg" alt="Couch Tour" width="151" height="14"></span></div><div></div>
-        <div><span class="nm">BotShield</span><span class="av bs">◆</span></div>
+        <div><span class="nm">BotShield</span><span class="av bs"><img class="bsmark" src="/img/botshield-shield.svg" width="22" height="24" alt=""></span></div>
       </div>
     </div>
     <div id="seq"><div class="empty"><p>Watch a personal agent work with Couch Tour, one request at a time.<br>BotShield appears only when Couch Tour's policy needs the account holder.</p><button class="start" id="startBtn" type="button">Start a session</button></div></div>
@@ -303,7 +303,7 @@ a{color:inherit}
     <div class="lane-label">Account holder's phone</div>
     <div class="simbanner" id="simBanner">Simulated: the real one appears in the BotShield app. Nothing here reaches BotShield.</div>
     <div class="phone"><div class="screen">
-      <div class="ph-head"><span class="av bs">◆</span>BotShield<small id="bsHeadNote">Simulated</small></div>
+      <div class="ph-head"><span class="av bs"><img class="bsmark" src="/img/botshield-shield.svg" width="22" height="24" alt=""></span>BotShield<small id="bsHeadNote">Simulated</small></div>
       <div class="bsapp" id="bsapp"><div class="bsidle"><div class="big">◆</div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div></div>
     </div></div>
   </section>
