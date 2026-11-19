@@ -17,7 +17,7 @@ const REASONING: Array<[RegExp, string, string[]]> = [
   [/^Already refunded/, 'Couch Tour', ['The assistant sent the same request again.', 'Same answer as before. Nothing is refunded twice.']],
   [/^Enter the presale/, 'Assistant', ['Asks to enter the presale. Declares botshield.ai/human-presence.']],
   [/^A person must confirm/, 'Couch Tour', ['One entry per person. An assistant can make any number of chats, so a chat proves nothing.', 'Answers 403 human_presence_required with a BotShield link.']],
-  [/^Signed answer checked once: a person/, 'BotShield → Couch Tour', ['A real person confirmed, and the gate counted them once.', 'Couch Tour learns pass or refused. Never who.']],
+  [/^Signed answer checked once: a person/, 'BotShield → Couch Tour', ['The person confirmed with their passkey, and the gate counted them once.', 'Couch Tour gets pass or refused. No identity travels.']],
   [/^Entered/, 'Couch Tour', ['A person was here, counted once. Entry recorded.']],
   [/^Check ended: refused/, 'Couch Tour', ['BotShield: already used, one per verified phone number.', 'Same person, new chat. Refused, and Couch Tour never learned it was the same person.']],
 ];

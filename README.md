@@ -3,12 +3,12 @@
 [![npm](https://img.shields.io/npm/v/@botshield/poppy)](https://www.npmjs.com/package/@botshield/poppy)
 
 Two extensions for the [Personal Agent Protocol](https://personalagentprotocol.org) ("Poppy"), so a
-Company can get a real person's yes when a personal agent is doing the asking.
+Company can get the account holder's yes when a personal agent is doing the asking.
 
 | Extension | What the Company gets | Spec |
 | --- | --- | --- |
 | `botshield.ai/approval` | The **account holder** approved these **exact terms**, on their own phone, with their passkey. A signed answer, good once. | [SPEC](extensions/approval/SPEC.md) |
-| `botshield.ai/human-presence` | A **real person** was present, counted once at the Company's gate (for example one entry per person), without learning who they are. | [SPEC](extensions/human-presence/SPEC.md) |
+| `botshield.ai/human-presence` | A **person confirmed with their passkey**, counted once at the Company's gate (for example one entry per person). The Company gets pass or refused, and no identity travels. | [SPEC](extensions/human-presence/SPEC.md) |
 
 Both follow Poppy 1.0's rules for third-party extensions (spec 3.3): they're named under a domain we
 control, they're optional, and a side that doesn't support them ignores them.
