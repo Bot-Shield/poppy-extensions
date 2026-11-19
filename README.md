@@ -225,8 +225,8 @@ live BotShield environment** with the [reference Company and agent](reference) (
 
 | Run | Result |
 | --- | --- |
-| Presale entry, person confirms with their passkey | Entry recorded |
-| Same person, new Session, same presale | Refused: one entry per person |
+| A person confirms with their passkey at a per-person limit | Counted |
+| The same person, a new Session, the same limit | Refused: already counted |
 | A gate that needs a verified phone number, account without one | Refused |
 | Plan change, account holder approves the exact terms in the BotShield app | Plan changed, once |
 
