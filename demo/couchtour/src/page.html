@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Couch Tour Poppy Demo</title>
+<link rel="icon" href="/img/couchtour-mark.svg" type="image/svg+xml">
+<meta name="description" content="A personal agent works with Couch Tour through the Personal Agent Protocol. When an account change needs the account holder's yes, BotShield asks them on their own phone.">
+<style>
+:root{
+  --bg:#f7f7f5;--panel:#fff;--soft:#f3f2ef;--line:#e7e5e0;--row-line:#eeece8;--ink:#1d1d1f;--muted:#6f6e69;--faint:#9a988f;
+  --agent:#4b4fd8;--agent-tint:#eef0fd;--agent-line:#dcdffa;
+  --ct:#b4235a;--ct-tint:#fbedf2;--ct-line:#f3d3df;
+  --bs:#0e7490;--bs-tint:#e6f4f7;--bs-line:#bfe3eb;
+  --err:#c2410c;--err-tint:#fff4ed;--sim:#a15c07;--sim-tint:#fdf3e1;--live:#c92a2a;--live-tint:#fdecec;--ok:#2f7a52;
+  --code-bg:#0f1115;--code-ink:#d7dae0;--mark:#155e75;
+  --phone:#121214;--chat-bg:#f6f7fb;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --radius:10px;
+}
+:root[data-theme="dark"]{
+  --bg:#111214;--panel:#17181b;--soft:#1e2024;--line:#2b2d32;--row-line:#24262b;--ink:#ecedf0;--muted:#a1a3aa;--faint:#71747c;
+  --agent:#8e92ff;--agent-tint:#1f2040;--agent-line:#34366a;--ct:#f06a9b;--ct-tint:#38182a;--ct-line:#5a2541;
+  --bs:#3cc4e0;--bs-tint:#0f2c34;--bs-line:#1d4b57;--err:#fb923c;--err-tint:#3a1f10;--sim:#f0b44c;--sim-tint:#3a2a10;--live:#ff7a7a;--live-tint:#3d1717;--ok:#5fd39a;
+  --code-bg:#0b0c0f;--mark:#38bdf8;--phone:#000;--chat-bg:#1b1c21;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#111214;--panel:#17181b;--soft:#1e2024;--line:#2b2d32;--row-line:#24262b;--ink:#ecedf0;--muted:#a1a3aa;--faint:#71747c;
+    --agent:#8e92ff;--agent-tint:#1f2040;--agent-line:#34366a;--ct:#f06a9b;--ct-tint:#38182a;--ct-line:#5a2541;
+    --bs:#3cc4e0;--bs-tint:#0f2c34;--bs-line:#1d4b57;--err:#fb923c;--err-tint:#3a1f10;--sim:#f0b44c;--sim-tint:#3a2a10;--live:#ff7a7a;--live-tint:#3d1717;--ok:#5fd39a;
+    --code-bg:#0b0c0f;--mark:#38bdf8;--phone:#000;--chat-bg:#1b1c21;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:inherit}
+
+/* Top bar */
+.top{height:54px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel);position:relative;z-index:20}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:17px;white-space:nowrap}
+.av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none}
+.av.agent{background:var(--agent)}.av.ct{background:var(--ct);border-radius:8px}.av.bs{background:var(--bs);border-radius:8px}
+.pill{font-size:12.5px;padding:4px 10px;border-radius:99px;background:var(--soft);color:var(--muted);white-space:nowrap;border:0}
+.pill.in{background:#e6f4ec;color:#2f7a52}.pill.out{background:var(--sim-tint);color:var(--sim)}
+:root[data-theme="dark"] .pill.in{background:#16301f;color:#5fd39a}
+.pill.sim{background:var(--sim-tint);color:var(--sim)}.pill.live{background:var(--live-tint);color:var(--live);font-weight:700}
+.menu{position:relative}
+.menu>button{border:1px dashed var(--line);background:transparent;border-radius:8px;padding:6px 12px;font-size:13.5px}
+.menu.solid>button{border-style:solid}
+.menu .list{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:250px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:6px;z-index:30}
+.menu.right .list{left:auto;right:0}
+.menu.open .list{display:block}
+.list h6{margin:8px 10px 4px;font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.list button,.list a{display:block;width:100%;text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:6px;text-decoration:none;font-size:13.5px}
+.list button:hover,.list a:hover{background:var(--soft)}
+.spacer{flex:1}
+.valid{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ok);background:transparent;border:1px solid var(--line);border-radius:99px;padding:5px 11px;white-space:nowrap}
+.valid.pending{color:var(--muted)}.valid.bad{color:var(--err)}
+
+/* Layout */
+.main{display:grid;grid-template-columns:330px minmax(0,1fr) 300px;height:calc(100% - 54px)}
+.col{min-height:0;overflow:auto}
+.lane-label{text-align:center;font-size:11.5px;letter-spacing:.09em;font-weight:600;color:var(--muted);text-transform:uppercase;margin:18px 0 12px}
+.side{background:linear-gradient(180deg,var(--agent-tint),transparent 40%);border-right:1px solid var(--line);padding:0 18px 18px;display:flex;flex-direction:column}
+.side.bsside{background:linear-gradient(180deg,var(--bs-tint),transparent 40%);border-right:0;border-left:1px solid var(--line)}
+
+/* Phones */
+.phone{flex:1;min-height:520px;max-height:760px;background:var(--phone);border-radius:38px;padding:10px;box-shadow:0 18px 40px rgba(20,20,40,.18);display:flex}
+.screen{flex:1;background:var(--chat-bg);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.ph-head{display:flex;align-items:center;gap:8px;padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--line);font-weight:600}
+.ph-head small{font-weight:400;color:var(--muted);margin-left:auto;font-size:11.5px}
+.chat{flex:1;overflow:auto;padding:14px 12px;display:flex;flex-direction:column;gap:8px}
+.chat>*{flex-shrink:0}
+.b{max-width:86%;padding:9px 12px;border-radius:16px;font-size:14px;white-space:pre-wrap;word-wrap:break-word}
+.b.user{align-self:flex-end;background:var(--agent);color:#fff;border-bottom-right-radius:5px}
+.b.agent{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px}
+.b.sys{align-self:center;max-width:94%;background:transparent;color:var(--muted);font-size:12px;text-align:center;padding:2px 6px}
+.b.card{align-self:stretch;max-width:100%;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.b.card .cta{display:block;width:100%;margin-top:8px;border:0;border-radius:10px;padding:10px;font-weight:600;background:var(--ct);color:#fff}
+.b.card .link{font-family:var(--mono);font-size:11.5px;word-break:break-all;color:var(--bs)}
+.typing{align-self:flex-start;color:var(--muted);font-size:12.5px;padding:2px 6px}
+.typing:after{content:'…';animation:dots 1.2s steps(4) infinite}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+.composer{padding:8px 10px 12px;border-top:1px solid var(--line);background:var(--panel)}
+.chips{display:none;flex-wrap:wrap;gap:6px;padding:10px;margin:0 0 8px;border:1px solid var(--line);border-radius:14px;background:var(--panel);max-height:260px;overflow:auto}
+.chips.open{display:flex}
+.chip{border:1px solid var(--agent-line);background:transparent;color:var(--agent);border-radius:99px;padding:6px 11px;font-size:13px;text-align:left}
+.chip.bsc{border-color:var(--bs-line);color:var(--bs)}
+.chip.bsc:before{content:'◆ ';font-size:10px}
+.chip:hover{background:var(--agent-tint)}.chip.bsc:hover{background:var(--bs-tint)}
+.chip:disabled{opacity:.45;cursor:default}
+.pick{width:100%;display:flex;align-items:center;gap:8px;border:1px solid var(--agent-line);background:var(--agent-tint);color:var(--agent);border-radius:99px;padding:9px 14px;font-weight:600;font-size:13.5px}
+.pick span{margin-left:auto;font-size:10px}
+.typebox{display:flex;gap:6px;margin-top:8px}
+.typebox input{flex:1;min-width:0;border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:99px;padding:8px 12px;font:inherit;font-size:13.5px}
+.typebox button{border:0;background:var(--agent);color:#fff;border-radius:99px;padding:0 14px;font-weight:600}
+.sheet{position:absolute;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-end;z-index:5}
+.sheet.open{display:flex}
+.sheet .in{width:100%;height:88%;background:var(--panel);border-radius:20px 20px 0 0;overflow:hidden;display:flex;flex-direction:column}
+.sheet .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.sheet .bar b{color:var(--ink);font-weight:600}
+.sheet .bar button{margin-left:auto;border:0;background:transparent;font-size:18px;line-height:1}
+.sheet iframe{flex:1;border:0;width:100%;background:#fff}
+
+/* BotShield app (simulated) */
+.simbanner{margin:0 0 10px;padding:8px 10px;border-radius:10px;background:var(--sim-tint);color:var(--sim);font-size:12.5px;line-height:1.35}
+.simbanner.live{background:var(--live-tint);color:var(--live)}
+.bsapp{flex:1;overflow:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px}
+.bsidle{margin:auto;text-align:center;color:var(--muted);font-size:13px;padding:0 10px}
+.bsidle .big{font-size:32px;color:var(--bs);margin-bottom:4px}
+.req{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 6px 18px rgba(14,116,144,.08);animation:pop .25s ease-out}
+@keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.req .from{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:6px}
+.req h4{margin:4px 0 10px;font-size:15px;line-height:1.35}
+.req dl{margin:0 0 12px;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px}
+.req dt{color:var(--muted)}.req dd{margin:0;text-align:right;font-weight:500}
+.req .yes{width:100%;border:0;border-radius:12px;padding:11px;background:var(--bs);color:#fff;font-weight:700}
+.req .no{width:100%;border:0;background:transparent;color:var(--muted);padding:9px;font-size:13px}
+.req .exp{font-size:11px;color:var(--faint);text-align:center}
+.done{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;text-align:center;font-size:13.5px}
+.done .big{font-size:28px}
+.pk{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px;color:var(--bs);font-weight:600}
+.pk .ring{width:46px;height:46px;border-radius:50%;border:3px solid var(--bs-line);border-top-color:var(--bs);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Sequence */
+.seq{background:var(--bg);padding:0 22px 40px}
+.seqhead{position:sticky;top:0;background:var(--bg);z-index:4;padding-bottom:8px}
+.seqtop{display:flex;align-items:center;gap:16px;margin:18px 0 12px}
+.seqtop .lane-label{margin:0;text-align:left}
+.tog{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink);user-select:none;cursor:pointer;background:none;border:0;padding:0}
+.tog i{width:34px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:.15s}
+.tog i:after{content:'';position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.tog[aria-pressed="true"] i{background:#2fa34f}.tog[aria-pressed="true"] i:after{left:16px}
+.actors,.grid{display:grid;grid-template-columns:minmax(0,1fr) 92px minmax(0,1fr) 92px minmax(0,1fr);align-items:center}
+.actors{font-weight:600;font-size:14px}
+.actors>div{display:flex;align-items:center;gap:8px}
+.actors>div:nth-child(3){justify-content:center}.actors>div:nth-child(5){justify-content:flex-end}
+.empty{margin:40px auto;text-align:center;color:var(--muted)}
+.start{border:0;background:var(--agent);color:#fff;border-radius:8px;padding:9px 16px;font-weight:600;font-size:14px}
+.group{margin-top:22px}
+.gtitle{display:flex;gap:10px;align-items:baseline;font-weight:600;margin:0 0 8px}
+.gtitle .n{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{border-top:1px solid var(--row-line);padding:10px 14px}
+.row:first-child{border-top:0}
+.row.err{background:var(--err-tint)}
+.cell{min-width:0;display:flex;align-items:flex-start;gap:8px}
+.cell.r{justify-content:flex-end;text-align:right}
+.title{font-weight:600;font-size:13.5px}
+.res{font-size:13px;color:var(--ink)}
+.dot{flex:none;margin-top:5px;width:7px;height:7px;border-radius:50%;background:var(--agent)}
+.dot.doc{background:#a15c07}.dot.browser{background:var(--muted)}
+.dia{flex:none;margin-top:1px;color:var(--bs);font-size:12px}
+.row.bsrow .title{color:var(--bs)}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag{font-size:11px;color:var(--muted);background:var(--soft);border-radius:4px;padding:1px 5px;font-family:var(--mono)}
+.tag.x{color:var(--bs);background:var(--bs-tint)}
+.tag.simt{color:var(--sim);background:var(--sim-tint);font-family:inherit}
+.count{font-size:11px;font-weight:700;color:var(--muted);background:var(--soft);border-radius:99px;padding:1px 7px;margin-left:6px}
+.arrows{display:block;width:100%;height:22px}
+.ar-req{stroke:var(--agent)}.ar-res{stroke:var(--ct)}
+.bsrow .ar-req{stroke:var(--ct)}.bsrow .ar-res{stroke:var(--bs)}
+.phrow .ar-res{stroke:var(--bs)}
+.err .ar-res{stroke:var(--err)}
+.more{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+.code.tall{max-height:640px}
+.notes{border-left:3px solid var(--agent);background:var(--agent-tint);border-radius:6px;padding:8px 10px 8px 10px;font-size:12.5px}
+.notes.c{border-color:var(--ct);background:var(--ct-tint)}
+.notes.b{border-color:var(--bs);background:var(--bs-tint)}
+.notes b{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+.notes ol{margin:0;padding-left:18px}
+.code{background:var(--code-bg);color:var(--code-ink);border-radius:8px;padding:10px 12px;font:11.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;margin:0}
+.code .k{color:#9fb4ff}.code .s{color:#b5e3a1}.code .h{color:#e8c07a}
+.code mark{background:rgba(56,189,248,.18);color:#7dd3fc;border-radius:3px;outline:1px solid rgba(56,189,248,.45)}
+.code details summary{cursor:pointer;color:#e8c07a}
+.code .lbl{color:#8b93a1;display:block;margin-bottom:4px;font-family:ui-sans-serif,system-ui;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.foot{margin:16px 0 0;font-size:12px;color:var(--muted);text-align:center}
+
+/* Modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal.open{display:flex}
+.modal .in{background:var(--panel);border-radius:14px;max-width:620px;width:100%;max-height:85vh;overflow:auto;padding:20px 22px;border:1px solid var(--line)}
+.modal h3{margin:0 0 6px}
+.modal .msg{padding:8px 10px;border-radius:8px;background:var(--soft);margin:6px 0;font-size:13px}
+.modal .msg b{text-transform:uppercase;font-size:11px;margin-right:6px}
+.modal .x{float:right;border:0;background:transparent;font-size:20px}
+
+/* Couch Tour lockup: mint mark and white wordmark, so it sits on a dark chip */
+.lockup{display:inline-flex;align-items:center;gap:8px;background:#0d1714;border-radius:8px;padding:6px 10px;flex:none}
+.lockup .mk{height:19px;width:auto}.lockup .wm{height:11px;width:auto}
+.lockup.sm{padding:5px 8px;gap:6px}.lockup.sm .mk{height:15px}.lockup.sm .wm{height:9px}
+.lockup.mkonly{padding:5px 6px}
+.valid img{width:18px;height:18px;border-radius:4px}
+.signin .cta2{display:block;width:100%;margin-top:6px;border:1px solid var(--line);border-radius:10px;padding:9px;font-weight:600;background:transparent;color:var(--ink)}
+.signin .cta{background:#0d1714;color:#fff}
+.phoneform{display:none;margin:0 0 8px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.phoneform.open{display:block}
+.phoneform p{margin:0 0 8px;font-size:12.5px;color:var(--muted)}
+.phoneform input{width:100%;border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:10px;padding:9px 11px;font:inherit}
+.phoneform .r{display:flex;gap:6px;margin-top:8px}
+.phoneform .r button{flex:1;border-radius:10px;padding:8px;font-weight:600;border:1px solid var(--line);background:transparent}
+.phoneform .r button.go{background:var(--agent);border-color:var(--agent);color:#fff}
+.typebox.hide{display:none}
+
+/* Narrower screens */
+@media (max-width:1240px){.main{grid-template-columns:310px minmax(0,1fr)}.side.bsside{grid-column:1;grid-row:2;border-left:0;border-right:1px solid var(--line);border-top:1px solid var(--line)}.main{height:auto}.side .phone{min-height:520px}.col{overflow:visible}.seq{grid-row:1 / span 2;grid-column:2}}
+@media (max-width:860px){
+  .actors .lockup .wm{display:none}
+  .main{display:block}.top{flex-wrap:wrap;height:auto;padding:8px 16px;row-gap:6px}.top .hide-s{display:none}
+  .side,.side.bsside{border:0;padding:0 16px 16px}.phone{max-height:640px}
+  .seq{padding:0 16px 40px}
+  .actors,.grid{grid-template-columns:minmax(0,1fr) 54px minmax(0,1fr) 54px minmax(0,1fr)}
+  .more{grid-template-columns:1fr}
+  .actors span.nm{display:none}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="logo"><span class="lockup"><img class="mk" src="/img/couchtour-mark.svg" width="33" height="23" alt=""><img class="wm" src="/img/couchtour-wordmark.svg" alt="Couch Tour" width="151" height="14"></span><span style="font-weight:400;color:var(--muted);font-size:14px" class="hide-s">Poppy demo</span></div>
+  <span class="pill" id="sessPill">No session</span>
+  <span class="pill sim" id="modePill" title="Simulated: no request reaches BotShield">Simulated BotShield</span>
+  <div class="menu" id="debugMenu"><button type="button" aria-haspopup="true">Debug ▾</button>
+    <div class="list">
+      <h6>Session</h6>
+      <button type="button" data-act="new">Start a new session</button>
+      <button type="button" data-act="signout">Sign out (revoke the refresh token)</button>
+      <h6>Demo account</h6>
+      <button type="button" data-act="reset">Reset the demo account</button>
+      <h6>Checks</h6>
+      <button type="button" data-act="validate">Poppy validator result</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button class="valid pending" id="validBtn" type="button" title="Checking with the public Poppy validator"><img src="/img/poppy.png" alt="" width="18" height="18"><span id="validText">Checking Poppy 1.0…</span></button>
+  <div class="menu solid right" id="viewMenu"><button type="button">View ▾</button>
+    <div class="list">
+      <h6>Couch Tour</h6>
+      <a href="/.well-known/poppy.json" target="_blank" rel="noopener">Discovery document (poppy.json) ↗</a>
+      <a href="/.well-known/oauth-protected-resource" target="_blank" rel="noopener">Protected resource metadata ↗</a>
+      <a href="/.well-known/oauth-authorization-server" target="_blank" rel="noopener">Sign-in server metadata ↗</a>
+      <a href="/openapi.json" target="_blank" rel="noopener">OpenAPI description ↗</a>
+      <h6>The agent</h6>
+      <a href="/agent/client.json" target="_blank" rel="noopener">Client metadata document ↗</a>
+      <h6>BotShield extensions</h6>
+      <a href="https://github.com/Bot-Shield/poppy-extensions/blob/main/extensions/approval/SPEC.md" target="_blank" rel="noopener">botshield.ai/approval spec ↗</a>
+      <a href="https://github.com/Bot-Shield/poppy-extensions/blob/main/extensions/human-presence/SPEC.md" target="_blank" rel="noopener">botshield.ai/human-presence spec ↗</a>
+      <a href="https://personalagentprotocol.org/docs/spec" target="_blank" rel="noopener">Poppy spec ↗</a>
+      <h6>Theme</h6>
+      <button type="button" data-theme-set="light">Light</button>
+      <button type="button" data-theme-set="dark">Dark</button>
+      <button type="button" data-theme-set="">Match the system</button>
+    </div>
+  </div>
+</header>
+
+<div class="main">
+  <section class="col side" aria-label="The user's phone">
+    <div class="lane-label">User</div>
+    <div class="phone"><div class="screen">
+      <div class="ph-head"><span class="av agent">A</span>Your agent<small>Claude</small></div>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      <div class="composer">
+        <form class="phoneform" id="phoneForm" autocomplete="off">
+          <p>Your phone number for Couch Tour (<b>poppy-demo.couchtour.app</b>). A made-up one works, like 415 555 0123.</p>
+          <input id="phoneIn" inputmode="tel" placeholder="Phone number" aria-label="Phone number" maxlength="24" data-testid="phone-input">
+          <div class="r"><button class="go" type="submit" data-testid="phone-continue">Continue</button><button type="button" id="phoneCancel">Cancel</button></div>
+        </form>
+        <div class="chips" id="chips"></div>
+        <button class="pick" id="pickBtn" type="button" aria-expanded="false">✦ <b id="pickLabel">Pick something to try</b><span>▴</span></button>
+        <form class="typebox" id="typeForm"><input id="typeIn" placeholder="Or type a message" maxlength="500" autocomplete="off"><button>Send</button></form>
+      </div>
+      <div class="sheet" id="sheet"><div class="in">
+        <div class="bar">🔒 <b id="sheetHost">poppy-demo.couchtour.app</b><button type="button" id="sheetClose" aria-label="Close">×</button></div>
+        <iframe id="sheetFrame" title="Sign in to Couch Tour"></iframe>
+      </div></div>
+    </div></div>
+  </section>
+
+  <section class="col seq" aria-label="Requests and responses">
+    <div class="seqhead">
+      <div class="seqtop">
+        <div class="lane-label">Agent ↔ Couch Tour ↔ BotShield</div>
+        <div class="spacer"></div>
+        <button class="tog" id="togReason" type="button" aria-pressed="false"><i></i>Reasoning</button>
+        <button class="tog" id="togRaw" type="button" aria-pressed="false"><i></i>Requests &amp; responses</button>
+      </div>
+      <div class="actors">
+        <div><span class="av agent">A</span><span class="nm">Your agent</span></div><div></div>
+        <div><span class="lockup sm" title="Couch Tour (demo)"><img class="mk" src="/img/couchtour-mark.svg" width="33" height="23" alt=""><img class="wm" src="/img/couchtour-wordmark.svg" alt="Couch Tour" width="151" height="14"></span></div><div></div>
+        <div><span class="nm">BotShield</span><span class="av bs">◆</span></div>
+      </div>
+    </div>
+    <div id="seq"><div class="empty"><p>Watch a personal agent work with Couch Tour, one request at a time.<br>BotShield appears only when Couch Tour's policy needs the account holder.</p><button class="start" id="startBtn" type="button">Start a session</button></div></div>
+    <p class="foot">● Poppy requests between the agent and Couch Tour &nbsp;·&nbsp; <span style="color:var(--bs)">◆</span> BotShield extension steps &nbsp;·&nbsp; § spec sections</p>
+  </section>
+
+  <section class="col side bsside" aria-label="The account holder's phone">
+    <div class="lane-label">Account holder's phone</div>
+    <div class="simbanner" id="simBanner">Simulated: the real one appears in the BotShield app. Nothing here reaches BotShield.</div>
+    <div class="phone"><div class="screen">
+      <div class="ph-head"><span class="av bs">◆</span>BotShield<small id="bsHeadNote">Simulated</small></div>
+      <div class="bsapp" id="bsapp"><div class="bsidle"><div class="big">◆</div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div></div>
+    </div></div>
+  </section>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="in"><button class="x" type="button" data-close>×</button><div id="modalBody"></div></div></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+  var rand = function (n) { var a = new Uint8Array(n); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_'[b & 63]; }).join(''); };
+
+  // Theme
+  var theme = store.get('ct-theme');
+  if (theme) document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('[data-theme-set]').forEach(function (b) {
+    b.onclick = function () { var t = b.getAttribute('data-theme-set'); if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); store.set('ct-theme', t); };
+  });
+
+  // The visitor: a random id, so each browser has its own demo account.
+  var vid = store.get('ct-vid');
+  if (!vid) { vid = 'v_' + rand(16); store.set('ct-vid', vid); }
+  document.cookie = 'ct_vid=' + vid + '; Path=/; Secure; SameSite=Lax; Max-Age=31536000';
+  var key = new URLSearchParams(location.search).get('key');
+
+  var S = { chat: null, after: 0, busy: 0, pending: null, mode: key ? 'live' : 'simulated', showReason: false, showRaw: false, groups: 0, lastRow: null, rows: [], polling: false, presaleDone: false };
+
+  // Menus
+  ['debugMenu', 'viewMenu'].forEach(function (id) {
+    var m = $(id);
+    m.querySelector('button').onclick = function (e) { e.stopPropagation(); var o = m.classList.contains('open'); document.querySelectorAll('.menu').forEach(function (x) { x.classList.remove('open'); }); if (!o) m.classList.add('open'); };
+  });
+  document.addEventListener('click', function () { document.querySelectorAll('.menu').forEach(function (x) { x.classList.remove('open'); }); });
+  $('debugMenu').querySelectorAll('[data-act]').forEach(function (b) {
+    b.onclick = function () {
+      var a = b.getAttribute('data-act');
+      if (a === 'new') newSession();
+      if (a === 'signout' && S.chat) api('/agent/chat/' + S.chat + '/signout', {}).then(pump);
+      if (a === 'reset') fetch('/agent/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vid: vid }) }).then(function () { S.presaleDone = false; newSession(); });
+      if (a === 'validate') showValidator();
+    };
+  });
+
+  // Toggles
+  function tog(btn, k) { btn.onclick = function () { S[k] = !S[k]; btn.setAttribute('aria-pressed', String(S[k])); document.body.classList.toggle(k, S[k]); rerender(); }; }
+  tog($('togReason'), 'showReason');
+  tog($('togRaw'), 'showRaw');
+
+  // Mode
+  function setMode(m) {
+    S.mode = m;
+    var p = $('modePill');
+    p.className = 'pill ' + (m === 'live' ? 'live' : 'sim');
+    p.textContent = m === 'live' ? 'LIVE BotShield' : 'Simulated BotShield';
+    p.title = m === 'live' ? 'Live: requests reach the BotShield app on the presenter\'s phone' : 'Simulated: no request reaches BotShield';
+    $('simBanner').className = 'simbanner' + (m === 'live' ? ' live' : '');
+    $('simBanner').textContent = m === 'live' ? 'Live: the request appears in the BotShield app on the presenter\'s phone, and they approve with their passkey.' : 'Simulated: the real one appears in the BotShield app. Nothing here reaches BotShield.';
+    $('bsHeadNote').textContent = m === 'live' ? 'Live, on the presenter\'s phone' : 'Simulated';
+    if (m === 'live') $('bsapp').innerHTML = '<div class="bsidle"><div class="big">◆</div>Live mode. Watch the presenter\'s phone: the request appears in the BotShield app there.</div>';
+  }
+  setMode(S.mode);
+
+  // Suggestions
+  var CHIPS = [
+    { label: 'Change the phone number on my account', text: 'Change the phone number on my account to 303 555 0141', bs: true },
+    { label: 'Enter me in the Red Rocks presale', text: 'Enter me in the Red Rocks presale', bs: true },
+    { label: "When's my next show?", text: "When's my next show?" },
+    { label: 'Refund my Red Rocks tickets to my card ending 4417', text: 'Refund my Red Rocks tickets to my card ending 4417', bs: true },
+    { label: "What's Couch Tour's refund policy?", text: "What's Couch Tour's refund policy?" },
+  ];
+  function renderChips() {
+    var c = $('chips');
+    c.innerHTML = '';
+    var list = CHIPS.slice();
+    if (S.presaleDone) list.splice(2, 0, { label: 'Try the presale again, in a new session', text: 'Enter me in the Red Rocks presale', bs: true, fresh: true });
+    list.forEach(function (ch) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (ch.bs ? ' bsc' : '');
+      b.textContent = ch.label;
+      b.disabled = S.busy > 0;
+      b.onclick = function () { closeChips(); if (ch.fresh) newSession().then(function () { send(ch.text); }); else send(ch.text); };
+      c.appendChild(b);
+    });
+  }
+  function closeChips() { $('chips').classList.remove('open'); $('pickBtn').setAttribute('aria-expanded', 'false'); }
+  $('pickBtn').onclick = function (e) { e.stopPropagation(); renderChips(); var o = $('chips').classList.toggle('open'); $('pickBtn').setAttribute('aria-expanded', String(o)); };
+  $('typeForm').onsubmit = function (e) { e.preventDefault(); var t = $('typeIn').value.trim(); if (!t) return; $('typeIn').value = ''; send(t); };
+  $('startBtn').onclick = function () { newSession(); };
+
+  // Talking to the agent
+  function api(path, body) {
+    S.busy++;
+    setTyping();
+    pump();
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().then(function (j) { j._status = r.status; return j; }); })
+      .catch(function () { return { error: 'network' }; })
+      .then(function (j) { S.busy--; setTyping(); return pump().then(function () { return j; }); });
+  }
+
+  function newSession() {
+    S.chat = 'c_' + rand(18);
+    S.after = 0; S.groups = 0; S.lastRow = null; S.rows = []; S.pending = null;
+    $('seq').innerHTML = '';
+    $('chat').innerHTML = '';
+    if (S.mode !== 'live') $('bsapp').innerHTML = idleBs();
+    return api('/agent/chat/' + S.chat + '/start', { vid: vid, key: key || undefined }).then(function (j) {
+      if (j.error === 'rate_limited') sys(j.error_description);
+      else if (j.error === 'demo_key_invalid') { sys('That demo key isn\'t right. Running simulated.'); key = null; setMode('simulated'); return newSession(); }
+      else if (j.error) sys('The session didn\'t start. Try again.');
+      if (j.mode) setMode(j.mode);
+      return j;
+    });
+  }
+
+  function send(text) {
+    var go = function () { return api('/agent/chat/' + S.chat + '/message', { text: text }).then(after); };
+    if (!S.chat) return newSession().then(function (j) { if (!j.error) return go(); });
+    if (S.busy) return;
+    return go();
+  }
+
+  function after(j) {
+    if (j && j.error === 'busy') return;
+    if (S.pending) schedulePoll(1500);
+  }
+
+  var pollTimer = null;
+  function schedulePoll(ms) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(function () {
+      if (!S.pending || !S.chat) return;
+      if (S.busy) return schedulePoll(1000);
+      api('/agent/chat/' + S.chat + '/poll', {}).then(function (j) {
+        if (j && j.pending) schedulePoll(Math.max(1000, Math.min(j.waitMs || 3000, 6000)));
+      });
+    }, ms);
+  }
+
+  // Events
+  var pumping = null;
+  function pump() {
+    if (!S.chat) return Promise.resolve();
+    if (pumping) return pumping;
+    var chat = S.chat;
+    pumping = fetch('/agent/chat/' + chat + '/events?after=' + S.after).then(function (r) { return r.json(); }).then(function (j) {
+      if (chat !== S.chat) return;
+      (j.events || []).forEach(function (e) { S.after = Math.max(S.after, e.seq); handle(e); });
+    }).catch(function () {}).then(function () { pumping = null; });
+    return pumping;
+  }
+  setInterval(function () { if (S.busy || S.pending) pump(); }, 600);
+  setInterval(function () { if (S.chat && S.mode !== 'live') phone(); }, 1500);
+
+  function handle(e) {
+    if (e.kind === 'group') { S.groups++; var g = document.createElement('div'); g.className = 'group'; g.innerHTML = '<div class="gtitle"><span class="n">' + S.groups + '</span>' + esc(e.title) + '</div><div class="card"></div>'; $('seq').appendChild(g); S.lastRow = null; scrollSeq(); return; }
+    if (e.kind === 'row') return addRow(e);
+    if (e.kind === 'say') return say(e);
+    if (e.kind === 'state') {
+      var p = $('sessPill');
+      p.className = 'pill ' + (e.signedIn ? 'in' : 'out');
+      p.textContent = 'Session · ' + (e.signedIn ? 'signed in' : 'signed out');
+      p.title = e.scopes ? 'Scopes: ' + e.scopes : '';
+      setMode(e.mode);
+      var was = S.pending;
+      S.pending = e.pending || null;
+      if (S.pending && !was && !S.busy) schedulePoll(2500);
+    }
+  }
+
+  function card() {
+    var cards = $('seq').querySelectorAll('.group .card');
+    return cards[cards.length - 1];
+  }
+
+  function addRow(e) {
+    var parent = card();
+    if (!parent) return;
+    // BotShield rows attach to the Poppy row they happened inside.
+    if ((e.lane === 'botshield') && S.lastRow) { S.lastRow.kids.push(e); S.lastRow.el.replaceWith(S.lastRow.el = rowEl(S.lastRow)); return scrollSeq(); }
+    // A repeat with the same outcome folds into the one before it.
+    if (e.fold && S.lastRow && S.lastRow.e.fold === e.fold) { S.lastRow.count++; S.lastRow.kids = []; S.lastRow.e = e; S.lastRow.el.replaceWith(S.lastRow.el = rowEl(S.lastRow)); return scrollSeq(); }
+    var r = { e: e, kids: [], count: 1, el: null };
+    r.el = rowEl(r);
+    parent.appendChild(r.el);
+    S.rows.push(r);
+    if (e.lane === 'poppy' || e.lane === 'browser') S.lastRow = r; else S.lastRow = null;
+    if (e.lane === 'botshield' && !S.lastRow) S.lastRow = null;
+    scrollSeq();
+  }
+
+  function rerender() { S.rows.forEach(function (r) { var n = rowEl(r); r.el.replaceWith(n); r.el = n; }); }
+
+  function arrows(dashedOnly, err) {
+    return '<svg class="arrows" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true">' +
+      (dashedOnly ? '' : '<line class="ar-req" x1="2" y1="6" x2="96" y2="6" stroke-width="1.3" vector-effect="non-scaling-stroke"/><polyline class="ar-req" points="91,2.5 97,6 91,9.5" fill="none" stroke-width="1.3" vector-effect="non-scaling-stroke"/>') +
+      '<line class="ar-res" x1="4" y1="16" x2="98" y2="16" stroke-width="1.3" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/><polyline class="ar-res" points="9,12.5 3,16 9,19.5" fill="none" stroke-width="1.3" vector-effect="non-scaling-stroke"/></svg>';
+  }
+  function tagsHtml(t) { return (t || []).map(function (x) { return '<span class="tag' + (x.ext ? ' x' : '') + '">' + esc(x.s.indexOf('§') === 0 || x.ext ? x.s : '§ ' + x.s) + '</span>'; }).join(''); }
+
+  function rowEl(r) {
+    var e = r.e;
+    var el = document.createElement('div');
+    var isPhone = e.lane === 'phone';
+    var cls = 'row' + (e.error ? ' err' : '') + (isPhone ? ' bsrow phrow' : '');
+    el.className = cls;
+    var count = r.count > 1 ? '<span class="count">×' + r.count + '</span>' : '';
+    var sim = e.simulated ? ' <span class="tag simt">simulated</span>' : '';
+    var h = '';
+    if (isPhone) {
+      h += '<div class="grid"><div class="cell"></div><div></div><div class="cell"></div><div></div><div class="cell r"><div><div class="title"><span class="dia">◆</span> BotShield app: ' + esc(e.title) + '</div><div class="res">' + esc(e.result) + '</div><div class="tags" style="justify-content:flex-end">' + tagsHtml(e.tags) + sim + '</div></div></div></div>';
+    } else {
+      var dot = e.special === 'poppy.json' || /^Get /.test(e.title) ? 'dot doc' : e.lane === 'browser' ? 'dot browser' : 'dot';
+      h += '<div class="grid">' +
+        '<div class="cell"><span class="' + dot + '"></span><div><div class="title">' + esc(e.title) + count + '</div><div class="tags">' + tagsHtml(e.tags) + '</div></div></div>' +
+        '<div>' + arrows(e.lane === 'browser' && !e.req, e.error) + '</div>' +
+        '<div class="cell"><div><div class="res">' + esc(e.result || '') + '</div><div class="tags">' + tagsHtml(e.rtags) + '</div></div></div>' +
+        '<div></div><div></div></div>';
+      r.kids.forEach(function (k) {
+        h += '<div class="grid bsrow" style="margin-top:8px">' +
+          '<div></div><div></div>' +
+          '<div class="cell r"><span class="dia">◆</span><div><div class="title" style="color:var(--bs)">' + esc(k.title) + '</div><div class="tags" style="justify-content:flex-end">' + tagsHtml(k.tags) + (k.simulated ? ' <span class="tag simt">simulated</span>' : '') + '</div></div></div>' +
+          '<div>' + arrows(false) + '</div>' +
+          '<div class="cell r"><div class="res">' + esc(k.result) + '</div></div></div>';
+      });
+    }
+    var more = '';
+    if (S.showReason && ((e.agentNotes && e.agentNotes.length) || (e.companyNotes && e.companyNotes.length))) {
+      more += '<div class="more">' +
+        (e.agentNotes && e.agentNotes.length ? '<div class="notes"><b>' + (isPhone ? 'What happens' : 'Your agent\'s reasoning') + '</b><ol>' + e.agentNotes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ol></div>' : '<div></div>') +
+        (e.companyNotes && e.companyNotes.length ? '<div class="notes c"><b>Couch Tour\'s reasoning</b><ol>' + e.companyNotes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ol></div>' : '<div></div>') +
+        '</div>';
+    }
+    if (S.showRaw && (e.req || e.res)) {
+      more += '<div class="more">' + httpBlock('Request', e.req, false) + httpBlock('Response', e.res, e.special === 'poppy.json') + '</div>';
+      r.kids.forEach(function (k) {
+        more += '<div class="more"><div class="notes b" style="grid-column:1 / -1"><b>Couch Tour → BotShield' + (k.simulated ? ' (simulated, inside the demo)' : '') + ': ' + esc(k.title) + '</b></div>' + httpBlock('Request', k.req, false) + httpBlock('Response', k.res, false) + '</div>';
+      });
+    }
+    el.innerHTML = h + more;
+    return el;
+  }
+
+  function httpBlock(label, x, highlightBs) {
+    if (!x) return '<div></div>';
+    var out = '<span class="lbl">' + label + '</span>';
+    if (x.method) out += '<span class="h">' + esc(x.method + ' ' + x.url) + '</span>\n';
+    if (x.status) out += '<span class="h">HTTP ' + esc(x.status) + '</span>\n';
+    Object.keys(x.headers || {}).forEach(function (k) { out += '<span class="k">' + esc(k) + ':</span> ' + esc(x.headers[k]) + '\n'; });
+    if (x.jwts && Object.keys(x.jwts).length) {
+      Object.keys(x.jwts).forEach(function (k) { out += '<details><summary>' + esc(k) + ' (decoded JWT)</summary>' + esc(JSON.stringify(x.jwts[k], null, 2)) + '</details>'; });
+    }
+    if (x.body !== undefined && x.body !== null && x.body !== '') {
+      var json = typeof x.body === 'string' ? x.body : JSON.stringify(x.body, null, 2);
+      var lines = esc(json).split('\n');
+      if (highlightBs) {
+        var inBs = 0;
+        lines = lines.map(function (l) {
+          if (l.indexOf('botshield.ai/') !== -1) { inBs = l.indexOf('[') !== -1 && l.indexOf(']') === -1 ? 1 : 0; return '<mark>' + l + '</mark>'; }
+          if (inBs) { if (l.indexOf(']') !== -1) inBs = 0; return '<mark>' + l + '</mark>'; }
+          return l;
+        });
+      }
+      out += '\n' + lines.join('\n');
+    }
+    return '<pre class="code' + (highlightBs ? ' tall' : '') + '">' + out + '</pre>';
+  }
+
+  function scrollSeq() { var s = document.querySelector('.seq'); if (s.scrollHeight - s.scrollTop - s.clientHeight < 400) s.scrollTop = s.scrollHeight; window.requestAnimationFrame(function () { if (window.innerWidth > 1240) s.scrollTop = s.scrollHeight; }); }
+
+  // Chat
+  function say(e) {
+    var c = $('chat');
+    var d = document.createElement('div');
+    if (e.role === 'user') { d.className = 'b user'; d.textContent = e.text; }
+    else if (e.role === 'agent') { d.className = 'b agent'; d.textContent = e.text; if (/presale/i.test(e.text) && /(you're in|entered|you are in)/i.test(e.text)) { S.presaleDone = true; } }
+    else if (e.action && e.action.type === 'signin') {
+      d.className = 'b card signin';
+      d.innerHTML = '<div>' + esc(e.text) + '</div><button class="cta" type="button" data-testid="signin-oauth">Sign in with Couch Tour</button><button class="cta2" type="button" data-testid="signin-phone">Sign in with phone</button>';
+      d.querySelector('.cta').onclick = function () { closePhone(); openSheet(e.action.url); };
+      d.querySelector('.cta2').onclick = function () { openPhone(); };
+    } else if (e.action && e.action.type === 'presence') {
+      d.className = 'b card';
+      d.innerHTML = '<div style="font-weight:600">◆ ' + esc(e.text) + '</div><div class="link">' + esc(e.action.url) + '</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:6px">' + (S.mode === 'live' ? 'Scan or open this link on your phone. Couch Tour (demo) asks.' : 'Simulated: confirm on the BotShield phone on the right. The link is shown, never opened by the agent.') + '</div>';
+    } else { d.className = 'b sys'; d.textContent = e.text; }
+    var t = c.querySelector('.typing');
+    c.insertBefore(d, t || null);
+    c.scrollTop = c.scrollHeight;
+  }
+  function sys(t) { say({ role: 'system', text: t }); }
+  function setTyping() {
+    var c = $('chat');
+    var t = c.querySelector('.typing');
+    if (S.busy && !t) { t = document.createElement('div'); t.className = 'typing'; t.textContent = 'Working'; c.appendChild(t); c.scrollTop = c.scrollHeight; }
+    if (!S.busy && t) t.remove();
+    document.querySelectorAll('.chip').forEach(function (b) { b.disabled = S.busy > 0; });
+  }
+
+  // Sign in with phone (Mediated Sign-In). The number goes to the agent's runtime, which sends it only
+  // to Couch Tour's token endpoint. It never reaches the model, and the page doesn't keep it.
+  function openPhone() { $('phoneForm').classList.add('open'); $('typeForm').classList.add('hide'); closeChips(); $('phoneIn').focus(); }
+  function closePhone() { $('phoneForm').classList.remove('open'); $('typeForm').classList.remove('hide'); $('phoneIn').value = ''; }
+  $('phoneCancel').onclick = closePhone;
+  $('phoneForm').onsubmit = function (ev) {
+    ev.preventDefault();
+    var n = $('phoneIn').value.trim();
+    if (n.replace(/\D/g, '').length < 10) { $('phoneIn').setCustomValidity('Enter a full phone number, like 415 555 0123'); $('phoneIn').reportValidity(); $('phoneIn').setCustomValidity(''); return; }
+    closePhone();
+    sys('Signing in with your phone number…');
+    api('/agent/chat/' + S.chat + '/signin-phone', { phone: n }).then(function (j) { if (!j.ok) sys('That sign-in didn\'t work. Try again.'); after(j); });
+  };
+
+  // Sign-in sheet (Couch Tour's page, in the user's browser)
+  function openSheet(url) {
+    $('sheetHost').textContent = new URL(url).host;
+    $('sheetFrame').src = url;
+    $('sheet').classList.add('open');
+  }
+  function closeSheet() { $('sheet').classList.remove('open'); $('sheetFrame').src = 'about:blank'; }
+  $('sheetClose').onclick = closeSheet;
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin || !ev.data || ev.data.type !== 'signin-done') return;
+    setTimeout(closeSheet, 500);
+    if (ev.data.chat && ev.data.chat === S.chat) api('/agent/chat/' + S.chat + '/resume', {}).then(after);
+  });
+
+  // The simulated BotShield app
+  function idleBs() { return '<div class="bsidle"><div class="big">◆</div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div>'; }
+  var shown = {};
+  var answering = false;
+  function phone() {
+    if (answering) return;
+    fetch('/sim/phone?vid=' + encodeURIComponent(vid)).then(function (r) { return r.json(); }).then(function (j) {
+      if (answering || S.mode === 'live') return;
+      var items = j.items || [];
+      var ids = items.map(function (i) { return i.request_id; }).join(',');
+      if (ids === shown.ids) return;
+      shown.ids = ids;
+      if (!items.length) { if (!shown.result) $('bsapp').innerHTML = idleBs(); return; }
+      shown.result = null;
+      $('bsapp').innerHTML = items.map(function (i) {
+        return '<div class="req" data-id="' + esc(i.request_id) + '"><div class="from"><span class="lockup mkonly"><img class="mk" src="/img/couchtour-mark.svg" width="33" height="23" alt="" style="height:13px"></span>Couch Tour (demo)</div>' +
+          '<h4>' + esc(i.title) + '</h4><dl>' + (i.details || []).map(function (d) { return '<dt>' + esc(d.label) + '</dt><dd>' + esc(d.value) + '</dd>'; }).join('') + '</dl>' +
+          '<button class="yes" type="button" data-a="confirm" data-testid="bs-confirm">Confirm with passkey</button><button class="no" type="button" data-a="deny">This isn\'t me</button>' +
+          '<div class="exp">' + (i.kind === 'approval' ? 'Only the account holder can approve this.' : 'One entry per person.') + '</div></div>';
+      }).join('');
+      $('bsapp').querySelectorAll('.req button').forEach(function (b) {
+        b.onclick = function () {
+          var id = b.closest('.req').getAttribute('data-id');
+          var a = b.getAttribute('data-a');
+          answering = true;
+          if (a === 'confirm') $('bsapp').innerHTML = '<div class="pk"><div class="ring"></div>Approving with your passkey…</div>';
+          setTimeout(function () {
+            fetch('/sim/phone/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vid: vid, request_id: id, answer: a }) }).then(function (r) { return r.json(); }).then(function (j) {
+              answering = false;
+              shown.ids = null;
+              var o = j.outcome;
+              var good = o === 'approved' || o === 'passed';
+              shown.result = true;
+              $('bsapp').innerHTML = '<div class="done"><div class="big">' + (good ? '✓' : '✕') + '</div>' + (o === 'approved' ? 'Approved with your passkey. Couch Tour gets a signed answer for these exact terms.' : o === 'passed' ? 'Confirmed with your passkey. Counted once for this presale.' : o === 'already_counted' ? 'You\'ve already been counted for this presale. One entry per person.' : 'Declined. Nothing happens.') + '</div>';
+              pump();
+              if (S.pending) schedulePoll(400);
+              setTimeout(function () { shown.result = null; }, 6000);
+            });
+          }, a === 'confirm' ? 900 : 0);
+        };
+      });
+    }).catch(function () {});
+  }
+
+  // Validator: the public Poppy validator's verdict on this host, through our own endpoint.
+  var lastValid = null;
+  function loadValidator() {
+    fetch('/api/validate').then(function (r) { return r.json(); }).then(function (j) {
+      lastValid = j;
+      var r = j.result || {};
+      var c = r.counts || {};
+      var ok = r.outcome === 'valid' && !c.error;
+      $('validBtn').className = 'valid' + (ok ? '' : ' bad');
+      $('validText').textContent = ok ? 'Poppy 1.0 compliant' : 'Poppy 1.0 validator: ' + (r.outcome || 'no answer');
+      $('validBtn').title = 'Validator: ' + (r.outcome || '?') + ' · checked against ' + (r.checkedAgainst || '?') + ' · specification revision ' + (r.specificationRevision || '?') + ' · ' + (c.error || 0) + ' errors, ' + (c.warning || 0) + ' warnings, ' + (c.info || 0) + ' info. Click for details.';
+    }).catch(function () { $('validText').textContent = 'Poppy 1.0 validator'; });
+  }
+  function showValidator() {
+    var j = lastValid;
+    var body = '<h3><img src="/img/poppy.png" alt="" width="22" height="22" style="vertical-align:-4px;border-radius:5px"> Poppy 1.0 validator</h3>';
+    if (!j || !j.result) body += '<p>No result yet.</p>';
+    else {
+      var r = j.result, c = r.counts || {};
+      body += '<p style="color:var(--muted);margin:0 0 10px">The public validator\'s verdict on <b>' + esc(location.host) + '</b>, checked ' + esc(new Date(j.checked_at).toLocaleString()) + '.</p>';
+      body += '<div class="msg"><b>outcome</b>' + esc(r.outcome) + '</div><div class="msg"><b>checked against</b>Poppy ' + esc(r.checkedAgainst) + ', specification revision ' + esc(r.specificationRevision) + '</div>';
+      body += '<div class="msg"><b>counts</b>' + (c.error || 0) + ' errors · ' + (c.warning || 0) + ' warnings · ' + (c.info || 0) + ' info</div>';
+      (r.messages || []).forEach(function (m) { body += '<div class="msg"><b>' + esc(m.severity) + '</b>' + esc(m.text) + (m.ref ? ' <a href="' + esc(m.ref.url) + '" target="_blank" rel="noopener">' + esc(m.ref.label) + '</a>' : '') + '</div>'; });
+      body += '<details style="margin-top:10px"><summary>Raw result</summary><pre class="code">' + esc(JSON.stringify(r, null, 2)) + '</pre></details>';
+    }
+    body += '<p style="font-size:12px;color:var(--muted)">Source: <a href="https://poppydemoagent.dev/validator" target="_blank" rel="noopener">poppydemoagent.dev/validator</a>, through <a href="/api/validate" target="_blank" rel="noopener">/api/validate</a>.</p>';
+    $('modalBody').innerHTML = body;
+    $('modal').classList.add('open');
+  }
+  $('validBtn').onclick = showValidator;
+  $('modal').onclick = function (e) { if (e.target === $('modal') || e.target.hasAttribute('data-close')) $('modal').classList.remove('open'); };
+  loadValidator();
+  renderChips();
+})();
+</script>
+</body>
+</html>
