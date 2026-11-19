@@ -36,8 +36,7 @@ one request, good once.
 
 BotShield is the witness, and a witness has to be independent of both sides. The answer is given
 outside the agent's reach, and the signed result comes from a party other than the one asking. It
-witnesses without asking who the customer is: BotShield never asks for an ID, and it works beside the
-sign-in and identity checks a Company already has.
+witnesses without asking who the customer is: BotShield never asks for an ID.
 
 Poppy names the gap. Its Operations extension relies on the agent's statement that the person
 approved, and Operations 8.1 says this "doesn't show that the User approved". Signed approvals are an
