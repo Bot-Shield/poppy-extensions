@@ -101,7 +101,8 @@ Retry-After: 5
       { "label": "Total", "value": "$95.00 a month" }
     ],
     "expires_at": "2026-11-18T17:05:00Z",
-    "retry_after": 5
+    "retry_after": 5,
+    "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4"
   }
 }
 ```
@@ -114,7 +115,7 @@ support this extension:
 {
   "isError": true,
   "content": [{ "type": "text", "text": "Not done yet. The account holder needs to approve this in the BotShield app on their phone: change your plan to Unlimited Plus ($95.00 a month). Call this tool again after they approve." }],
-  "structuredContent": { "approval": { "approval_id": "apv_8Hq2Lk", "state": "requested", "summary": "…", "terms": [], "expires_at": "…", "retry_after": 5 } }
+  "structuredContent": { "approval": { "approval_id": "apv_8Hq2Lk", "state": "requested", "summary": "Change your plan to **Unlimited Plus**, from your next bill.", "terms": [{ "label": "Plan", "value": "Unlimited Plus" }, { "label": "Total", "value": "$95.00 a month" }], "expires_at": "2026-11-18T17:05:00Z", "retry_after": 5, "operation_hash": "fUO4lcit8LvKJK4qyu-uKdVLC_PkSWzLkD0k0IcJeU4" } }
 }
 ```
 
