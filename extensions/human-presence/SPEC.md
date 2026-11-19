@@ -2,8 +2,9 @@
 
 **Status:** draft · **Builds on:** [Personal Agent Protocol 1.0](https://personalagentprotocol.org/docs/1.0/spec) · **License:** Apache 2.0
 
-A Company asks for a real person to be present before it does something, and can count each person
-once, without learning who they are. The person confirms on their phone, with their passkey.
+A Company asks for a person to confirm before it does something, and can count each person once.
+The person confirms on their phone, with their passkey. The Company gets pass or refused, and no
+identity travels.
 
 ## 1. The problem
 
@@ -12,7 +13,7 @@ can create any number of User IDs, so the Company can't tell one person using ma
 many people, and can't stop one person entering a draw, claiming an offer or joining a waitlist many
 times through one agent without cutting off everyone who uses it.
 
-This extension lets the Company ask: **is a real person here, and have they already been counted?**
+This extension lets the Company ask: **has a person confirmed with their passkey, and have they already been counted?**
 
 - The Company starts a presence check at BotShield, for one of its own gates.
 - The Personal Agent shows the User a link or QR code. The person opens it on their phone and
