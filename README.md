@@ -136,7 +136,8 @@ A match says whose agent it is. For the customer's approval of an order's exact 
 The [package guide](packages/poppy/README.md) has the rest: what to set up first, the approval of an
 order or change, a Session with no signed-in account, MCP servers, the options and their defaults,
 the errors to handle, and how to run the reference Company and agent. BotShield's API and Console are
-documented at [docs.botshield.ai](https://docs.botshield.ai/poppy/overview).
+documented at [docs.botshield.ai](https://docs.botshield.ai/poppy/overview), and the model behind this is
+at [botshield.ai/agent-identity](https://botshield.ai/agent-identity).
 
 ## Status
 
