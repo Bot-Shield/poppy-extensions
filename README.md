@@ -5,9 +5,6 @@
 Extensions for the [Personal Agent Protocol](https://personalagentprotocol.org) ("Poppy"), so a
 Company knows that the agent placing an order **belongs to a verified customer**.
 
-An independent, third-party project. BotShield is not affiliated with or endorsed by the authors of
-the Personal Agent Protocol.
-
 BotShield connects a customer's account at a Company to a passkey on the customer's own phone; such
 an account is BotShield Verified. Poppy signs a customer's agent in to an account at the Company.
 These extensions add the account holder's own answer, given on their phone with that passkey.
