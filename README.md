@@ -14,7 +14,7 @@ These extensions add the account holder's own answer, given on their phone with 
 
 | The Company knows | How | With |
 | --- | --- | --- |
-| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? Match, or no match. | `botshield.ai/approval` · [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
+| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? A BotShield Verified Agent, or no match. | `botshield.ai/approval` · [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
 | **The verified customer approved this order or change.** | The account holder approves the **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
 
 BotShield is not the checkout, the wallet or the card: the Company takes the order, and the payment
