@@ -810,7 +810,7 @@ const SHEET_CSS = `
 :root{--ink:#17151c;--muted:#6b6875;--line:#e7e4ec;--ct:#b4235a;--ct-soft:#fbeaf1;--bg:#fff}
 @media (prefers-color-scheme:dark){:root{--ink:#f1eff5;--muted:#a19dab;--line:#34303c;--ct:#f06a9b;--ct-soft:#3a1c29;--bg:#17151c}}
 *{box-sizing:border-box}body{margin:0;font:15px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg);padding:20px 18px}
-.brand{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--ct)}.dot{width:26px;height:26px;border-radius:7px;background:var(--ct);color:#fff;display:grid;place-items:center;font-size:13px}
+.brand{display:flex}.lockup{display:inline-flex;align-items:center;gap:7px;background:#0d1714;border-radius:8px;padding:7px 10px}
 h1{font-size:20px;margin:16px 0 4px}p{margin:6px 0;color:var(--muted)}.who{display:inline-block;margin:8px 0 14px;padding:4px 10px;border-radius:99px;background:var(--ct-soft);color:var(--ct);font-weight:600;font-size:13px}
 label{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);font-size:14px}label b{display:block}label span{color:var(--muted);font-size:13px}
 input[type=checkbox]{margin-top:4px;accent-color:var(--ct);width:16px;height:16px}
@@ -819,7 +819,7 @@ button.go{background:var(--ct);border-color:var(--ct);color:#fff}.fine{font-size
 
 function consentPage(clientName: string, scope: string[], nonce: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in to Couch Tour</title><style>${SHEET_CSS}</style></head><body>
-<div class="brand"><span class="dot">CT</span>Couch Tour</div>
+<div class="brand"><span class="lockup"><img src="/img/couchtour-mark.svg" width="33" height="23" alt="" style="height:17px;width:auto"><img src="/img/couchtour-wordmark.svg" alt="Couch Tour" width="151" height="14" style="height:10px;width:auto"></span></div>
 <h1>Sign in to Couch Tour</h1>
 <div class="who">as the demo fan</div>
 <p><b style="color:var(--ink)">${esc(clientName)}</b> is asking to:</p>
@@ -833,5 +833,5 @@ ${scope.map((s) => `<label><input type="checkbox" name="scope" value="${esc(s)}"
 }
 
 function page(message: string): Response {
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Couch Tour</title><style>${SHEET_CSS}</style></head><body><div class="brand"><span class="dot">CT</span>Couch Tour</div><h1>Sign in</h1><p>${esc(message)}</p></body></html>`, { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Couch Tour</title><style>${SHEET_CSS}</style></head><body><div class="brand"><span class="lockup"><img src="/img/couchtour-mark.svg" width="33" height="23" alt="" style="height:17px;width:auto"><img src="/img/couchtour-wordmark.svg" alt="Couch Tour" width="151" height="14" style="height:10px;width:auto"></span></div><h1>Sign in</h1><p>${esc(message)}</p></body></html>`, { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
