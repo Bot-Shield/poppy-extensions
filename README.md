@@ -2,15 +2,22 @@
 
 [![npm](https://img.shields.io/npm/v/@botshield/poppy)](https://www.npmjs.com/package/@botshield/poppy)
 
-Two extensions for the [Personal Agent Protocol](https://personalagentprotocol.org) ("Poppy"), so a
-Company can get the account holder's yes when a personal agent is doing the asking.
+Extensions for the [Personal Agent Protocol](https://personalagentprotocol.org) ("Poppy"), for a
+Company whose customers send a personal agent to shop, change a plan or place an order.
 
-| Extension | What the Company gets | Spec |
+Poppy gets the agent in the door. These add what a Company needs before it acts:
+
+| The Company wants to know | What it gets | With |
 | --- | --- | --- |
-| `botshield.ai/approval` | The **account holder** approved these **exact terms**, on their own phone, with their passkey. A signed answer, good once. | [SPEC](extensions/approval/SPEC.md) |
-| `botshield.ai/human-presence` | A **person confirmed with their passkey**, counted once at the Company's gate (for example one entry per person). The Company gets pass or refused, and no identity travels. | [SPEC](extensions/human-presence/SPEC.md) |
+| **Did the account holder approve this?** | The account holder approved these **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
+| **Whose assistant is ordering?** | The account holder approves an assistant once. At every order the Company asks, fresh: is this still that account holder's assistant? Match, or no match. | `botshield.ai/approval`, [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
+| **Is this release still fair?** | One entry per person at a presale, a draw or a limited drop, however many Sessions an agent opens. A person confirms with their passkey and is counted once. | `botshield.ai/human-presence` · [SPEC](extensions/human-presence/SPEC.md) |
 
-Both follow Poppy 1.0's rules for third-party extensions (spec 3.3): they're named under a domain we
+BotShield is not the checkout, the wallet or the card. The Company takes the order and the payment
+rail takes the payment; these extensions answer who approved and whose assistant is asking. The
+personal agent never receives the account holder's identity.
+
+They follow Poppy 1.0's rules for third-party extensions (spec 3.3): they're named under a domain we
 control, they're optional, and a side that doesn't support them ignores them.
 
 ## Why
@@ -115,9 +122,33 @@ async function changePlan(account: string, clientId: string, approvalId: string 
 returns a status, headers and a body, so it fits any framework;
 [`reference/company.ts`](reference/company.ts) is a complete server built this way on `node:http`.
 
-### Human presence
+### Whose assistant is ordering
 
-`HumanPresence` asks a person to confirm at one of your gates and counts them once. It takes the
+`AssistantGate` asks the account holder once whether an assistant may order for them, then checks at
+every order. The account holder can remove the assistant in the BotShield app at any time, and the
+next check is no match.
+
+```ts
+import { BotShieldApi, AssistantGate, approvalResponse } from '@botshield/poppy';
+
+const api = new BotShieldApi({ secretKey: process.env.BOTSHIELD_SECRET_KEY! });
+const assistants = new AssistantGate({ api, agent: 'yourcompany' });   // needs an Action with the key `assistant`
+
+// Call this when an order is placed, after your Poppy Session checks. `iss` and `sub` are the verified Session's.
+async function checkAssistant(account: string, session: { iss: string; sub: string }, orderRef: string, approvalId: string | null) {
+  const r = await assistants.require({ account, assistant: { clientId: session.iss, userId: session.sub }, orderRef, approvalId });
+  if (r.allowed) return { status: 200, headers: {}, body: { checked_at: r.checkedAt, check_id: r.checkId } };
+  if ('refused' in r) return { status: 403, headers: {}, body: { error: r.refused } };   // the assistant's metadata gave no name
+  return approvalResponse(r.approval);                                                  // 403: the account holder is asked, once
+}
+```
+
+A match says whose assistant it is. For a yes to an order's exact terms, ask for it with
+`AccountHolderApproval`.
+
+### One entry per person
+
+`HumanPresence` keeps a presale, a draw or a limited drop to one entry per person. It takes the
 verified Poppy Session, not an account, and it has no `perform`:
 
 ```ts
@@ -148,14 +179,15 @@ repeats the call with the ID in `_meta` (`APPROVAL_ID_META`, `PRESENCE_ID_META`)
 - **For approvals:** an Action in the Console (its key, here `plan`), and an agent name the request
   is shown under. The account has to be BotShield Verified with you before its holder can be asked;
   `reference/company.ts` shows that one-time step (`/account/link`).
-- **For presence:** a Human Gate in the Console, with its per-person rule.
+- **To check whose assistant is ordering:** an Action with the key `assistant`.
+- **For one entry per person:** a Human Gate in the Console, with its per-person rule.
 - **A Company that speaks Poppy 1.0.** These extensions sit behind your own Session and token checks.
 
 ### Options
 
 | Option | On | Default | What it does |
 | --- | --- | --- | --- |
-| `ttlSeconds` | `AccountHolderApproval` | 600 | How long the account holder has to answer. 60 to 86400. |
+| `ttlSeconds` | `AccountHolderApproval`, `AssistantGate` | 600 | How long the account holder has to answer. 60 to 86400. |
 | `passFor` | `HumanPresence` | 3600 | How long a pass covers the Session, in seconds. |
 | `retryAfter` | both | 5 | Seconds the Personal Agent is told to wait between repeats. |
 | `checkEvery` | both | 10 | Ask BotShield at most once in this many seconds per request, however often the agent repeats. |
