@@ -1,7 +1,6 @@
 /**
  * The demo page: three lanes (the fan's chat · the exchange · the account holder's phone), replaying
  * runs recorded against BotShield's production sandbox with a real phone and a real passkey.
- * Words here are for Product to review.
  */
 import refund from '../replay/refund.json';
 import presale from '../replay/presale.json';

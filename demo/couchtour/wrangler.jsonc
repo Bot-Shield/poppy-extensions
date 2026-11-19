@@ -5,12 +5,11 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-07-01",
   // A demo Couch Tour for BotShield's Poppy extensions. Not Couch Tour's production service.
-  // Paul OK'd poppy-demo.couchtour.app (2026-11-18). A subdomain, so nothing that real assistants
-  // discover is on couchtour.app itself.
+  // Served on a subdomain, so nothing that assistants discover is on couchtour.app itself.
   "routes": [{ "pattern": "poppy-demo.couchtour.app", "custom_domain": true, "zone_name": "couchtour.app" }],
   "workers_dev": false,
   "vars": {
-    // BotShield's production sandbox (a development key): real servers, the presenter's real phone.
+    // BotShield's production sandbox (a development key): real servers and a real phone.
     "BOTSHIELD_API_URL": "https://api.botshield.ai",
     "DEMO_HOST": "poppy-demo.couchtour.app",
     "DEMO_AGENT_NAME": "couchtour",
