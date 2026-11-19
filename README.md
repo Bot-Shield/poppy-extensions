@@ -35,7 +35,8 @@ passkey; the passkey signs what was shown, and BotShield gives the Company a sig
 one request, good once.
 
 BotShield is the witness, and a witness has to be independent of both sides. The answer is given
-outside the agent's reach, and the signed result comes from a party other than the one asking.
+outside the agent's reach, and the signed result comes from a party other than the one asking. It
+witnesses without asking who the customer is: nobody uploads an ID.
 
 Poppy names the gap. Its Operations extension relies on the agent's statement that the person
 approved, and Operations 8.1 says this "doesn't show that the User approved". Signed approvals are an
