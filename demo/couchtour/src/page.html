@@ -304,7 +304,7 @@ a{color:inherit}
     <div class="simbanner" id="simBanner">Simulated: the real one appears in the BotShield app. Nothing here reaches BotShield.</div>
     <div class="phone"><div class="screen">
       <div class="ph-head"><span class="av bs"><img class="bsmark" src="/img/botshield-shield.svg" width="22" height="24" alt=""></span>BotShield<small id="bsHeadNote">Simulated</small></div>
-      <div class="bsapp" id="bsapp"><div class="bsidle"><div class="big">◆</div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div></div>
+      <div class="bsapp" id="bsapp"><div class="bsidle"><div class="big"><img src="/img/botshield-shield.svg" width="44" height="48" alt=""></div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div></div>
     </div></div>
   </section>
 </div>
@@ -368,7 +368,7 @@ a{color:inherit}
     $('simBanner').className = 'simbanner' + (m === 'live' ? ' live' : '');
     $('simBanner').textContent = m === 'live' ? 'Live: the request appears in the BotShield app on the presenter\'s phone, and they approve with their passkey.' : 'Simulated: the real one appears in the BotShield app. Nothing here reaches BotShield.';
     $('bsHeadNote').textContent = m === 'live' ? 'Live, on the presenter\'s phone' : 'Simulated';
-    if (m === 'live') $('bsapp').innerHTML = '<div class="bsidle"><div class="big">◆</div>Live mode. Watch the presenter\'s phone: the request appears in the BotShield app there.</div>';
+    if (m === 'live') $('bsapp').innerHTML = '<div class="bsidle"><div class="big"><img src="/img/botshield-shield.svg" width="44" height="48" alt=""></div>Live mode. Watch the presenter\'s phone: the request appears in the BotShield app there.</div>';
   }
   setMode(S.mode);
 
@@ -639,7 +639,7 @@ a{color:inherit}
   });
 
   // The simulated BotShield app
-  function idleBs() { return '<div class="bsidle"><div class="big">◆</div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div>'; }
+  function idleBs() { return '<div class="bsidle"><div class="big"><img src="/img/botshield-shield.svg" width="44" height="48" alt=""></div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div>'; }
   var shown = {};
   var answering = false;
   function phone() {
