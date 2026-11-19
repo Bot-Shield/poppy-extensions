@@ -10,23 +10,24 @@ identity travels.
 
 A Company can limit or block agent traffic only per Personal Agent (`client_id`). A Personal Agent
 can create any number of User IDs, so the Company can't tell one person using many Sessions from
-many people, and can't stop one person entering a draw, claiming an offer or joining a waitlist many
-times through one agent without cutting off everyone who uses it.
+many people. Any limit it sets per customer, such as one account, one offer or one order at a price,
+can be passed many times through one agent, and the only defence is to cut off everyone who uses
+that agent.
 
 This extension lets the Company ask: **has a person confirmed with their passkey, and have they already been counted?**
 
 - The Company starts a presence check at BotShield, for one of its own gates.
 - The Personal Agent shows the User a link or QR code. The person opens it on their phone and
   confirms with their passkey in the BotShield app.
-- BotShield counts each person against the gate's rule, such as one pass per person per sale, and
+- BotShield counts each person against the gate's rule, such as one pass per person, and
   gives the Company a signed answer. The answer names no person.
 - The Personal Agent repeats its request.
 
-**Example.** A ticket seller opens a presale for a show: one entry per person. A fan's assistant
-asks to enter. The seller answers that a person must confirm, with a link. The fan scans it with
-their phone and confirms with their passkey. The assistant repeats its request and the entry is
-recorded. When the same fan, through any agent, tries to enter again, BotShield's answer is that
-this person has already been counted, and the seller refuses the second entry.
+**Example.** A store offers a price to each customer once. A customer's assistant asks to order at
+that price. The store answers that a person must confirm, with a link. The customer opens it on
+their phone and confirms with their passkey. The assistant repeats its request and the order goes
+through. When the same person, through any agent or Session, asks again, BotShield's answer is that
+this person has already been counted, and the store refuses the second order at that price.
 
 ## 2. What it is not
 
