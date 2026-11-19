@@ -42,7 +42,8 @@ const validVid = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z
 async function handle(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
-  const GET = req.method === 'GET';
+  // HEAD is answered as GET for the public documents and the page (the runtime drops the body).
+  const GET = req.method === 'GET' || req.method === 'HEAD';
 
   // Discovery (spec 3, 3.2, 7) and the agent's own documents (spec 4.1).
   if (GET && path === '/.well-known/poppy.json') return pub(poppyJson(env));

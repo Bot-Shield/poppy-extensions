@@ -60,8 +60,12 @@ export function scrub(v: unknown, key = ''): unknown {
     if (/phone/i.test(key)) return maskPhone(v);
     if (/^(partner_user_ref|partner_user_id|account_ref)$/.test(key)) return 'acct_•••• (Couch Tour\'s own reference)';
     if (/^(token|verification_token|signed_token|access_token|refresh_token|code|code_verifier|client_assertion|anchor_grant_token|session_token)$/.test(key)) return short(v, 10, 4);
-    // Any long run of digits that could be a phone number.
-    return v.replace(/\+?\d[\d\s().-]{8,}\d/g, (m) => maskPhone(m));
+    // Any run of 10 to 15 digits that could be a phone number. Dates and times are left alone.
+    if (/^\d{4}-\d{2}-\d{2}(T|$)/.test(v)) return v;
+    return v.replace(/\+?\d[\d\s().-]{8,}\d/g, (m) => {
+      const n = m.replace(/\D/g, '').length;
+      return n >= 10 && n <= 15 && !/^\d{4}-\d{2}-\d{2}/.test(m) ? maskPhone(m) : m;
+    });
   }
   if (Array.isArray(v)) return v.map((x) => scrub(x, key));
   if (typeof v === 'object') {
