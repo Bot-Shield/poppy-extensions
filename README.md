@@ -11,7 +11,7 @@ Poppy gets the agent in the door. These add what a Company needs before it acts:
 | --- | --- | --- |
 | **Did the account holder approve this?** | The account holder approved these **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
 | **Whose assistant is ordering?** | The account holder approves an assistant once. At every order the Company asks, fresh: is this still that account holder's assistant? Match, or no match. | `botshield.ai/approval`, [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
-| **Is this release still fair?** | One entry per person at a presale, a draw or a limited drop, however many Sessions an agent opens. A person confirms with their passkey and is counted once. | `botshield.ai/human-presence` · [SPEC](extensions/human-presence/SPEC.md) |
+| **Is this one person, counted once?** | A person confirms with their passkey and is counted once, however many agents or Sessions they use. Any limit the Company sets per person holds. | `botshield.ai/human-presence` · [SPEC](extensions/human-presence/SPEC.md) |
 
 BotShield is not the checkout, the wallet or the card. The Company takes the order and the payment
 rail takes the payment; these extensions answer who approved and whose assistant is asking. The
@@ -146,21 +146,21 @@ async function checkAssistant(account: string, session: { iss: string; sub: stri
 A match says whose assistant it is. For a yes to an order's exact terms, ask for it with
 `AccountHolderApproval`.
 
-### One entry per person
+### One person, counted once
 
-`HumanPresence` keeps a presale, a draw or a limited drop to one entry per person. It takes the
-verified Poppy Session, not an account, and it has no `perform`:
+`HumanPresence` counts a person once, however many agents or Sessions they use, so a per-person
+limit you set holds. It takes the verified Poppy Session, not an account, and it has no `perform`:
 
 ```ts
 import { BotShieldApi, HumanPresence, PRESENCE_ID_HEADER, presenceResponse } from '@botshield/poppy';
 
 const api = new BotShieldApi({ secretKey: process.env.BOTSHIELD_SECRET_KEY! });
-const presence = new HumanPresence({ api, gate: 'presale' });   // the key of a Human Gate in the Console
+const presence = new HumanPresence({ api, gate: 'one-per-person' });   // the key of a Human Gate in the Console
 
-async function enterPresale(session: { client: string; sid: string; user: string }, presenceId: string | null) {
+async function countOnce(session: { client: string; sid: string; user: string }, presenceId: string | null) {
   const r = await presence.require({ session, presenceId });     // presenceId: the BotShield-Presence-Id header, or null
   if (!r.passed) return presenceResponse(r.presence);            // { status: 403, headers, body }
-  return { status: 200, headers: {}, body: { entered: true } };
+  return { status: 200, headers: {}, body: { counted: true } };
 }
 ```
 
@@ -180,7 +180,7 @@ repeats the call with the ID in `_meta` (`APPROVAL_ID_META`, `PRESENCE_ID_META`)
   is shown under. The account has to be BotShield Verified with you before its holder can be asked;
   `reference/company.ts` shows that one-time step (`/account/link`).
 - **To check whose assistant is ordering:** an Action with the key `assistant`.
-- **For one entry per person:** a Human Gate in the Console, with its per-person rule.
+- **To count a person once:** a Human Gate in the Console, with its per-person rule.
 - **A Company that speaks Poppy 1.0.** These extensions sit behind your own Session and token checks.
 
 ### Options
