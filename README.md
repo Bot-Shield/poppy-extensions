@@ -19,6 +19,8 @@ BotShield is not the checkout, the wallet or the card. The Company takes the ord
 rail takes the payment. The agent binds to an ID that is unique to the Company and never receives
 the account holder's identity.
 
+**The API is free, and BotShield is free for your first 1,000 monthly active Verified Accounts.**
+
 They follow Poppy 1.0's rules for third-party extensions (spec 3.3): they're named under a domain we
 control, they're optional, and a side that doesn't support them ignores them.
 
