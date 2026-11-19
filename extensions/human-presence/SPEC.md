@@ -2,18 +2,17 @@
 
 **Status:** draft · **Builds on:** [Personal Agent Protocol 1.0](https://personalagentprotocol.org/docs/1.0/spec) · **License:** Apache 2.0
 
-A Company asks whether the Personal Agent in a Session belongs to a human. A person confirms on
-their phone, with their passkey, that the agent is acting for them. The Company gets pass or
-refused, and no identity travels.
+A Company asks a person to confirm, with their passkey, in a Session where no account is signed in.
+The person confirms on their phone. The Company gets pass or refused, and no identity travels.
 
 ## 1. The problem
 
 A Company sees a Personal Agent's `client_id` and a User ID the agent chose. Neither tells it
-whether a human is behind this Session, and a Personal Agent can create any number of User IDs. So
+whether a person is behind this Session, and a Personal Agent can create any number of User IDs. So
 the Company can act on agent traffic only per Personal Agent: it serves all of an agent's Sessions
 or none of them.
 
-This extension lets the Company ask: **does this agent belong to a human?**
+This extension lets the Company ask: **has a person confirmed, with their passkey, for this Session?**
 
 - The Company starts a presence check at BotShield, for one of its own gates.
 - The Personal Agent shows the User a link or QR code. The person opens it on their phone and
@@ -25,8 +24,7 @@ This extension lets the Company ask: **does this agent belong to a human?**
 **Example.** A customer's assistant asks a store to open an account and place an order. The store
 answers that a person must confirm, with a link. The customer opens it on their phone and confirms
 with their passkey. The assistant repeats its request and the store goes ahead. The store knows a
-human is behind this agent. It still does not know who, and BotShield tells it nothing it could
-match with another Company.
+person confirmed for this Session. BotShield gives it nothing it could match with another Company.
 
 A gate can also carry a rule per person, such as one pass each. Then a second Session from the same
 person, through any agent, is refused.
