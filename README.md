@@ -29,15 +29,21 @@ domain we control, they're optional, and a side that doesn't support them ignore
 
 ## Why
 
-Poppy lets a person's agent find a Company, sign in with scopes, and act. For an action that needs
-approval, Poppy's Operations extension relies on the agent's statement that the person approved;
-Operations 8.1 says this "doesn't show that the User approved", and points the Company to its own
-channel for actions where it wants to see the person approve. Signed approvals are an open topic on
-Poppy's roadmap
+An agent can say its customer approved. A Company cannot check that.
+
+For an action that is hard to undo, such as a payment, a cancellation or a change of plan, the
+Company needs the customer's own decision on the exact terms, in a form it can verify. These
+extensions capture it. The account holder reads the terms on their own phone and approves with their
+passkey; the passkey signs what was shown, and BotShield gives the Company a signed answer for that
+one request, good once.
+
+Poppy names the gap. Its Operations extension relies on the agent's statement that the person
+approved, and Operations 8.1 says this "doesn't show that the User approved". Signed approvals are an
+open topic on Poppy's roadmap
 ([#71](https://github.com/personal-agent-protocol/personal-agent-protocol/issues/71),
 [#74](https://github.com/personal-agent-protocol/personal-agent-protocol/issues/74)).
 
-These extensions are that channel, the same for every agent:
+The flow is the same for every agent:
 
 1. The agent asks the Company to do something.
 2. The Company answers **403** and asks the account holder through BotShield. Nothing is done yet.
