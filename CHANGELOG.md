@@ -9,6 +9,14 @@
   `'ask'`**, today's behaviour, so existing users see no change; `GateResult` gains the
   `{ allowed: false, match: false }` member, which code that switches exhaustively on it must
   handle. `botshield.ai/approval` section 9a steps 1 and 4 now say the Company decides when to ask.
+- `@botshield/poppy`: `AssistantGate` and `readAssistantName` check the assistant's `client_id` and
+  metadata by the same rules BotShield applies at `gates-api/assistants/register`, so the account
+  holder is never asked to approve an assistant that registration would then refuse: an HTTPS URL of
+  at most 2048 characters with no surrounding whitespace, user, password or fragment; a DNS name, not
+  an IP address, `localhost`, `*.localhost`, `*.local` or `*.internal`; every address it resolves to
+  public (on Node; runtimes without a resolver skip this step); the metadata at most 64 KiB. The
+  gate applies the URL rules even with a custom `readName`. `readAssistantName` takes optional
+  `fetch` and `resolve` for tests.
 - `demo/couchtour`: ticket orders on the BotShield Signal API (`POST /api/orders`, `placeOrder`), with
   `AssistantGate` in `'signal'` mode. The first order asks the account holder once ("Let Demo agent
   buy for you"); later orders are a silent Match. The simulated BotShield answers

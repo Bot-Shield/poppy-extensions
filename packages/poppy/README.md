@@ -25,7 +25,11 @@ npm install @botshield/poppy
   becomes verified, and `reference/company.ts` shows the step in a demo (`/account/link`).
 - **For the BotShield Signal API (verified at each order):** an Action in the Console with the key
   `assistant`, and the name your requests are shown under. Your server reads the agent's name from
-  the Poppy metadata at its `client_id`.
+  the Poppy metadata at its `client_id`, by the same rules BotShield uses when it registers the
+  approval: an HTTPS URL on a public DNS name (no IP address, no user, password or fragment, at most
+  2048 characters), fetched without redirects, at most 64 KiB, its `client_id` the URL itself, and a
+  `client_name` of 1 to 60 characters. Any other agent is refused (`assistant_unknown`) before the
+  account holder is asked.
 - **For approvals of an order or change:** an Action in the Console (its key, here `plan`).
 - **For a Session with no signed-in account:** a Human Gate in the Console.
 
