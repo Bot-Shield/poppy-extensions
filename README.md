@@ -11,7 +11,7 @@ These extensions add the account holder's own answer, given on their phone with 
 
 | The Company knows | How | With |
 | --- | --- | --- |
-| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? A BotShield Verified Agent, or no match. | `botshield.ai/approval` · [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
+| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? The BotShield Signal API answers Match, or no match. | `botshield.ai/approval` · [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
 | **The verified customer approved this order or change.** | The account holder approves the **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
 
 BotShield is not the checkout, the wallet or the card: the Company takes the order, and the payment
@@ -34,9 +34,9 @@ extensions capture it. The account holder reads the terms on their own phone and
 passkey; the passkey signs what was shown, and BotShield gives the Company a signed answer for that
 one request, good once.
 
-BotShield is the witness, and a witness has to be independent of both sides. The answer is given
-outside the agent's reach, and the signed result comes from a party other than the one asking. It
-witnesses without asking who the customer is: BotShield never asks for an ID.
+BotShield is independent of the Company and of the agent, so the signed result stands on its own.
+The answer is given outside the agent's reach, and the signed result comes from a party other than
+the one asking. BotShield never asks for an ID.
 
 Poppy names the gap. Its Operations extension relies on the agent's statement that the person
 approved, and Operations 8.1 says this "doesn't show that the User approved". Signed approvals are an
