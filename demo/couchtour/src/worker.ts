@@ -13,8 +13,8 @@
  *
  * Nothing here touches Couch Tour's production service.
  */
-import { BotShieldApi, APPROVAL_ID_HEADER, PRESENCE_ID_HEADER, APPROVAL_ID_META, PRESENCE_ID_META, approvalToolResult, presenceToolResult } from '../../../packages/poppy/src/index.ts';
-import { DemoState } from './state.ts';
+import { BotShieldApi, AssistantGate, APPROVAL_ID_HEADER, PRESENCE_ID_HEADER, APPROVAL_ID_META, PRESENCE_ID_META, approvalToolResult, presenceToolResult } from '../../../packages/poppy/src/index.ts';
+import { DemoState, doStore } from './state.ts';
 import { demoPage } from './page.ts';
 import { setLocalHandler } from './net.ts';
 import { Collector } from './trace.ts';
@@ -150,6 +150,17 @@ async function handle(req: Request, env: Env): Promise<Response> {
     }
     const rid = url.searchParams.get('request_id');
     if (req.method === 'POST' && path === '/api/admin/link/confirm' && rid) return json({ link: await api.confirmLink({ requestId: rid, partnerUserRef: env.DEMO_ACCOUNT_REF }) });
+  }
+  // Admin only: the BotShield Signal API for any assistant client_id on the linked demo account, in 'ask'
+  // mode (Loop 190 day-1 test: client_id https://chatgpt.com/oauth/client.json). Body: { client_id, approval_id? }.
+  if (req.method === 'POST' && path === '/api/admin/assistant-check') {
+    if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
+    const b = (await req.json().catch(() => ({}))) as { client_id?: string; approval_id?: string | null };
+    if (!b.client_id) return json({ error: 'client_id required' }, 400);
+    const api = new BotShieldApi({ secretKey: env.BOTSHIELD_SECRET_KEY, baseUrl: env.BOTSHIELD_API_URL });
+    const gate = new AssistantGate({ api, agent: env.DEMO_AGENT_NAME, store: doStore(stubOf(env), 'admin-assistant'), checkEvery: 0 });
+    const r: any = await gate.require({ account: env.DEMO_ACCOUNT_REF, assistant: { clientId: b.client_id }, orderRef: `ord_${Date.now()}`, approvalId: b.approval_id ?? null });
+    return json({ allowed: r.allowed, match: r.match ?? null, refused: r.refused ?? null, approval: r.approval ? { approval_id: r.approval.approval_id, state: r.approval.state, summary: r.approval.summary } : null });
   }
   if (req.method === 'POST' && path === '/api/reset') {
     if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
