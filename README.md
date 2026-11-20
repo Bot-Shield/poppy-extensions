@@ -11,7 +11,7 @@ These extensions add the account holder's own answer, given on their phone with 
 
 | The Company knows | How | With |
 | --- | --- | --- |
-| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? The BotShield Signal API answers Match, or no match. | `botshield.ai/approval` · [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
+| **The agent belongs to a verified customer.** | The account holder approves the agent once, on their own phone, with their passkey. At every order the Company asks BotShield, fresh: is this still that customer's agent? The BotShield Signal API answers verified: true or false. | `botshield.ai/approval` · [section 9a](extensions/approval/SPEC.md#9a-approving-an-assistant-the-purchase-gate) |
 | **The verified customer approved this order or change.** | The account holder approves the **exact terms**, on their own phone, with their passkey. A signed answer, good once. | `botshield.ai/approval` · [SPEC](extensions/approval/SPEC.md) |
 
 BotShield is not the checkout, the wallet or the card: the Company takes the order, and the payment
@@ -94,7 +94,7 @@ npm install @botshield/poppy
 
 `AssistantGate` asks the account holder once whether an agent may order for them, then checks at
 every order. The account holder can remove the agent in the BotShield app at any time, and the next
-check is no match.
+check answers false.
 
 ```ts
 import { BotShieldApi, BotShieldError, AssistantGate, approvalResponse } from '@botshield/poppy';

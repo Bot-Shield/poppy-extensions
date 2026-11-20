@@ -1,7 +1,7 @@
 {
   "name": "@botshield/poppy",
   "version": "0.3.0",
-  "description": "BotShield for the Personal Agent Protocol (Poppy), company side, for Node.js: the account holder's signed approval, and the BotShield Signal API for agentic commerce, which answers Match at each order.",
+  "description": "BotShield for the Personal Agent Protocol (Poppy), company side, for Node.js: the account holder's signed approval, and the BotShield Signal API for agentic commerce, which answers verified: true or false at each order.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": { "type": "git", "url": "git+https://github.com/Bot-Shield/poppy-extensions.git", "directory": "packages/poppy" },
