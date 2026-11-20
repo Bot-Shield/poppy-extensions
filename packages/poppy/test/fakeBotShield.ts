@@ -4,6 +4,7 @@
  * verification/status.
  */
 export interface FakeState {
+  lastRequest?: Record<string, unknown>;
   linked: boolean;
   action?: { request_id: string; act: string; status: string; expires_at: string; token: string | null; spent: boolean };
   check?: { request_id: string; status: string; reason: string | null; token: string | null; spent: boolean };
@@ -34,6 +35,7 @@ export function fakeBotShield(state: FakeState): typeof fetch {
       case 'gates-api/actions/request':
         if (!auth.startsWith('Bearer bs_')) return refuse('key', 401, 'invalid_key');
         if (!state.linked) return refuse('not linked', 409, 'not_linked');
+        state.lastRequest = body;
         state.action = { request_id: body.request_id, act: body.act, status: 'queued', expires_at: new Date(Date.now() + 600_000).toISOString(), token: null, spent: false };
         return ok({ request_id: body.request_id, status: 'queued', expires_at: state.action.expires_at });
       case 'gates-api/actions/request-status': {

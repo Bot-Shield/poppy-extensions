@@ -144,6 +144,7 @@ export class AssistantGate {
     const started = await this.opts.api.requestAction({
       requestId, agent: this.opts.agent, act: `${ASSISTANT_ACT_KEY}:${digest}`, actLabel: summary,
       partnerUserRef: account, details: terms, ttlSeconds: this.ttl,
+      assistantClientId: clientId, ...(userId ? { assistantUserId: userId } : {}),
     });
     const rec: AssistantRecord = { id, lookup, state: 'requested', requestId, name, summary, terms, expiresAt: started.expires_at, operationHash: opHash };
     await this.store.put(rec);
