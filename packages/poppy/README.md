@@ -32,7 +32,7 @@ npm install @botshield/poppy
 ## BotShield Signal API: verified at each order
 
 `AssistantGate` is the BotShield Signal API, for agentic commerce. The account holder approves an
-agent once, with their passkey. At every order after that your server gets a fresh answer: **verified: true** (the agent is bound to a BotShield Verified customer) or **false**. On a match, nobody is asked. The
+agent once, with their passkey. At every order after that your server gets a fresh answer: **verified: true** (the agent is bound to a BotShield Verified customer) or **false**. When it's verified, nobody is asked. The
 account holder can remove the agent in the BotShield app at any time, and the next check is no match.
 
 ```ts
