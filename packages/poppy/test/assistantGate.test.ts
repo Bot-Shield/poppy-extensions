@@ -200,3 +200,10 @@ test('a client_id BotShield would refuse asks nobody, even with a custom name re
   assert.equal(read, 0);
   assert.equal(state.calls.length, 0);
 });
+
+test('the approval request carries the assistant id, so BotShield sets the title from its own read of the name', async () => {
+  const { state, gate } = setup();
+  await gate.require({ account: 'acct_1', assistant, orderRef: 'ord_1' });
+  assert.equal(state.lastRequest?.assistant_client_id, assistant.clientId);
+  assert.equal(state.lastRequest?.assistant_user_id, assistant.userId);
+});

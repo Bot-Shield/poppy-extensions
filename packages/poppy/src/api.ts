@@ -49,6 +49,9 @@ export class BotShieldApi {
     partnerUserRef: string;
     details?: Array<{ label: string; value: string }>;
     ttlSeconds?: number;
+    /** For an `assistant:` act: the assistant's client_id (and user id when the act digests one). BotShield reads the name from it for the title. */
+    assistantClientId?: string;
+    assistantUserId?: string;
   }): Promise<{ request_id: string; status: ActionStatus; expires_at: string }> {
     return this.call('POST', 'gates-api/actions/request', this.key, {
       request_id: input.requestId,
@@ -58,6 +61,8 @@ export class BotShieldApi {
       partner_user_ref: input.partnerUserRef,
       ...(input.details?.length ? { details: input.details } : {}),
       ...(input.ttlSeconds ? { ttl_seconds: input.ttlSeconds } : {}),
+      ...(input.assistantClientId ? { assistant_client_id: input.assistantClientId } : {}),
+      ...(input.assistantUserId ? { assistant_user_id: input.assistantUserId } : {}),
     });
   }
 

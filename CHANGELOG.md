@@ -2,6 +2,8 @@
 
 ## 0.3.0 — 2026-11-19
 
+- `@botshield/poppy`: the approval request for an assistant sends its `client_id` (and user id), so
+  BotShield titles the request from its own reading of the assistant's name.
 - `@botshield/poppy`: `AssistantGate` takes `onUnapproved: 'ask' | 'signal'`. `'signal'` asks
   nobody when the assistant isn't approved, whether the gate has never seen it or the check comes
   back no match, and returns `{ allowed: false, match: false }` for the Company to act on. The new
