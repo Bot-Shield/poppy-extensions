@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-19
 
 - `@botshield/poppy`: `AssistantGate` takes `onUnapproved: 'ask' | 'signal'`. `'signal'` asks
   nobody when the assistant isn't approved, whether the gate has never seen it or the check comes
