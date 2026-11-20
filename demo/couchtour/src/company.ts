@@ -23,6 +23,7 @@ import { decodeJwt, pkceChallenge, randomId, sha256b64, short, thumbprint, verif
 import { getJson, type NetEnv } from './net.ts';
 import { Collector, maskPhone, scrub, type Row } from './trace.ts';
 import { SIM_BASE, SIM_KEY, simBotShieldFetch } from './simBotShield.ts';
+import { PINNED_DOCS } from './knownClients.ts';
 
 export interface CompanyEnv extends NetEnv {
   STATE: DurableObjectNamespace<DemoState>;
@@ -88,7 +89,7 @@ export function poppyJson(env: CompanyEnv) {
     },
     apis: [
       { type: 'openapi', url: `${o}/openapi.json`, description: 'Upcoming shows, buying tickets, your account, changing the phone number on file, refunds, and presale entries' },
-      { type: 'mcp', url: `${o}/mcp`, description: 'Refunds, presale entries and phone number changes, as MCP tools (needs the demo key)' },
+      { type: 'mcp', url: `${o}/mcp`, description: 'Shows, your account and buying tickets, as MCP tools: add it as a connector in ChatGPT or Claude and sign in to Couch Tour' },
     ],
     extensions: {
       [APPROVAL_EXTENSION]: [{ version: '1' }],
@@ -102,6 +103,16 @@ export function protectedResource(env: CompanyEnv) {
   return { resource: origin(env), authorization_servers: [issuer(env)], scopes_supported: Object.keys(SCOPES), bearer_methods_supported: ['header'], resource_name: 'Couch Tour (demo)' };
 }
 
+/** The MCP endpoint's own resource (MCP authorization, RFC 9728 path-inserted well-known URI). */
+export const mcpResource = (env: CompanyEnv) => `${origin(env)}/mcp`;
+export const mcpResourceMetadataUrl = (env: CompanyEnv) => `${origin(env)}/.well-known/oauth-protected-resource/mcp`;
+/** What the connector tools need: looking at the account and buying. */
+export const CONNECTOR_SCOPES = ['account:read', 'account:write'];
+
+export function mcpProtectedResource(env: CompanyEnv) {
+  return { resource: mcpResource(env), authorization_servers: [issuer(env)], scopes_supported: CONNECTOR_SCOPES, bearer_methods_supported: ['header'], resource_name: 'Couch Tour (demo)' };
+}
+
 export function authServerMetadata(env: CompanyEnv) {
   const o = origin(env);
   return {
@@ -112,15 +123,17 @@ export function authServerMetadata(env: CompanyEnv) {
     grant_types_supported: ['authorization_code', 'refresh_token', MEDIATED_GRANT],
     response_types_supported: ['code'],
     code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['private_key_jwt'],
-    token_endpoint_auth_signing_alg_values_supported: ['ES256', 'PS384'],
-    revocation_endpoint_auth_methods_supported: ['private_key_jwt'],
-    revocation_endpoint_auth_signing_alg_values_supported: ['ES256', 'PS384'],
+    // private_key_jwt for Poppy agents (ES256, PS384) and ChatGPT (RS256); none for public clients
+    // with PKCE, such as Claude. Clients are Client ID Metadata Documents; there's no registration endpoint.
+    token_endpoint_auth_methods_supported: ['private_key_jwt', 'none'],
+    token_endpoint_auth_signing_alg_values_supported: ['ES256', 'PS384', 'RS256'],
+    revocation_endpoint_auth_methods_supported: ['private_key_jwt', 'none'],
+    revocation_endpoint_auth_signing_alg_values_supported: ['ES256', 'PS384', 'RS256'],
     authorization_response_iss_parameter_supported: true,
     client_id_metadata_document_supported: true,
     prompt_values_supported: ['consent'],
     scopes_supported: Object.keys(SCOPES),
-    protected_resources: [o],
+    protected_resources: [o, mcpResource(env)],
   };
 }
 
@@ -210,23 +223,43 @@ export function liveAllowed(req: Request, env: CompanyEnv): boolean {
 
 // ── Client metadata (CIMD, spec 4.1) ──────────────────────────────────────────────────────────────
 
-type ClientMeta = { client_id: string; client_name?: string; jwks_uri: string; redirect_uris: string[]; token_endpoint_auth_method?: string };
+type ClientMeta = {
+  client_id: string; client_name?: string; jwks_uri?: string; redirect_uris: string[];
+  token_endpoint_auth_method?: string; token_endpoint_auth_methods_supported?: string[]; token_endpoint_auth_signing_alg?: string;
+};
 const clientCache = new Map<string, { at: number; meta: ClientMeta; jwks: { keys: Jwk[] } }>();
+
+/** A client's public document, live; the pinned copy (knownClients.ts) only when the live fetch fails. */
+async function clientDoc<T>(env: CompanyEnv, url: string): Promise<T> {
+  try {
+    return await getJson<T>(env, url);
+  } catch (e) {
+    if (PINNED_DOCS[url]) {
+      console.warn('[oauth] using the pinned copy of', url, '-', (e as Error).message);
+      return structuredClone(PINNED_DOCS[url]) as T;
+    }
+    throw e;
+  }
+}
 
 async function client(env: CompanyEnv, clientId: string): Promise<{ meta: ClientMeta; jwks: { keys: Jwk[] } }> {
   const hit = clientCache.get(clientId);
   if (hit && Date.now() - hit.at < 300_000) return hit;
   const u = new URL(clientId);
   if (u.protocol !== 'https:') throw new Error('client_id must be an HTTPS URL');
-  const meta = await getJson<ClientMeta>(env, clientId);
+  const meta = await clientDoc<ClientMeta>(env, clientId);
   if (meta.client_id !== clientId) throw new Error('client_id in the metadata is not the URL it came from');
-  const j = new URL(meta.jwks_uri);
-  if (j.protocol !== 'https:' || j.host !== u.host) throw new Error('jwks_uri must be on the client_id\'s domain');
+  // A public client (token_endpoint_auth_method "none", like Claude) has no keys. Anyone else signs.
+  if (!meta.jwks_uri && !isPublic(meta)) throw new Error('the metadata has no jwks_uri');
+  if (meta.jwks_uri) {
+    const j = new URL(meta.jwks_uri);
+    if (j.protocol !== 'https:' || j.host !== u.host) throw new Error('jwks_uri must be on the client_id\'s domain');
+  }
   for (const r of meta.redirect_uris ?? []) {
     const ru = new URL(r);
     if (!(ru.protocol === 'https:' && ru.host === u.host) && !(ru.protocol === 'http:' && /^(127\.0\.0\.1|\[::1\])$/.test(ru.hostname))) throw new Error('redirect_uris must be on the client_id\'s domain');
   }
-  const jwks = await getJson<{ keys: Jwk[] }>(env, meta.jwks_uri);
+  const jwks = meta.jwks_uri ? await clientDoc<{ keys: Jwk[] }>(env, meta.jwks_uri) : { keys: [] };
   const entry = { at: Date.now(), meta, jwks };
   clientCache.set(clientId, entry);
   return entry;
@@ -234,52 +267,118 @@ async function client(env: CompanyEnv, clientId: string): Promise<{ meta: Client
 
 async function keyFor(jwks: { keys: Jwk[] }, kid: string | undefined): Promise<Jwk | null> {
   for (const k of jwks.keys ?? []) if (k.kid === kid || (!k.kid && kid && (await thumbprint(k)) === kid)) return k;
+  // No kid in the header: a JWKS with one key has only one candidate.
+  if (!kid && jwks.keys?.length === 1) return jwks.keys[0];
   return null;
 }
 
+/** A public client: its metadata says it doesn't authenticate at the token endpoint (OAuth 2.1, PKCE only). */
+const isPublic = (meta: ClientMeta) => meta.token_endpoint_auth_method === 'none' || !!meta.token_endpoint_auth_methods_supported?.includes('none');
+
+type ClientAuth = { ok: true; clientId: string; meta: ClientMeta; method: 'private_key_jwt' | 'none' } | { ok: false; res: Response };
+
+/**
+ * Authenticates the client at the token or revocation endpoint: a private_key_jwt assertion when it
+ * sends one, else a public client (no secret) whose metadata says `none`. A public client can only
+ * redeem a code with its PKCE verifier, or a refresh token issued to it.
+ */
+async function authenticateClient(env: CompanyEnv, stub: Stub, form: URLSearchParams, c: Collector): Promise<ClientAuth> {
+  if (form.has('client_assertion') || form.has('client_assertion_type')) return checkAssertion(env, stub, form, c);
+  const clientId = form.get('client_id') ?? '';
+  const fail = (d: string) => ({ ok: false as const, res: oauthErr('invalid_client', d, 401) });
+  if (!clientId) return fail('Send client_id (a public client) or a private_key_jwt client assertion.');
+  let cl;
+  try { cl = await client(env, clientId); } catch (e) { return fail(`Couldn't read the client metadata: ${(e as Error).message}`); }
+  if (!isPublic(cl.meta)) return fail('This client\'s metadata says it signs with private_key_jwt. Send a client assertion.');
+  c.note(`✓ Public client ${cl.meta.client_name ?? clientId}: its metadata says token_endpoint_auth_method none, so PKCE is what binds the code.`);
+  return { ok: true, clientId, meta: cl.meta, method: 'none' };
+}
+
 /** private_key_jwt client assertion (spec 4.1, RFC 7523). */
-async function checkAssertion(env: CompanyEnv, stub: Stub, form: URLSearchParams, c: Collector): Promise<{ ok: true; clientId: string; meta: ClientMeta } | { ok: false; res: Response }> {
+async function checkAssertion(env: CompanyEnv, stub: Stub, form: URLSearchParams, c: Collector): Promise<ClientAuth> {
   const fail = (d: string) => ({ ok: false as const, res: oauthErr('invalid_client', d, 401) });
   if (form.get('client_assertion_type') !== 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer') return fail('Use private_key_jwt.');
   const a = form.get('client_assertion') ?? '';
   let parts;
   try { parts = decodeJwt(a); } catch { return fail('The client assertion is not a JWT.'); }
   const p = parts.payload;
-  if (p.iss !== p.sub || (form.get('client_id') && form.get('client_id') !== p.iss)) return fail('iss and sub must be the client_id.');
-  if (p.aud !== issuer(env)) return fail('aud must be the issuer, as one string (spec 4.1).');
+  const alg = parts.header.alg;
+  if (alg !== 'ES256' && alg !== 'PS384' && alg !== 'RS256') return fail('alg must be ES256, PS384 or RS256.');
+  if (typeof p.iss !== 'string' || p.iss !== p.sub || (form.get('client_id') && form.get('client_id') !== p.iss)) return fail('iss and sub must be the client_id.');
   const now = Math.floor(Date.now() / 1000);
-  if (typeof p.exp !== 'number' || p.exp < now || typeof p.iat !== 'number' || p.exp - p.iat > 300) return fail('exp must be at most 5 minutes after iat, and not passed.');
-  if (!p.jti || !(await stub.kvAdd(`ajti:${p.jti}`, 1, 600_000))) return fail('jti missing or reused.');
+  if (alg === 'RS256') {
+    // An RFC 7523 client that isn't a Poppy agent (ChatGPT): aud is the issuer or the token endpoint,
+    // as a string or in an array; iat is optional; the assertion lives at most an hour.
+    const auds = Array.isArray(p.aud) ? p.aud : [p.aud];
+    if (!auds.some((x) => x === issuer(env) || x === `${origin(env)}/oauth/token` || x === `${origin(env)}/oauth/revoke`)) return fail('aud must be the issuer or the token endpoint.');
+    if (typeof p.exp !== 'number' || p.exp < now || p.exp - now > 3600 || (p.iat !== undefined && (typeof p.iat !== 'number' || p.iat > now + 60))) return fail('exp must be within the hour and not passed, and iat not in the future.');
+  } else {
+    if (p.aud !== issuer(env)) return fail('aud must be the issuer, as one string (spec 4.1).');
+    if (typeof p.exp !== 'number' || p.exp < now || typeof p.iat !== 'number' || p.exp - p.iat > 300) return fail('exp must be at most 5 minutes after iat, and not passed.');
+  }
+  if (!p.jti || !(await stub.kvAdd(`ajti:${p.jti}`, 1, 3600_000))) return fail('jti missing or reused.');
   let cl;
   try { cl = await client(env, p.iss); } catch (e) { return fail(`Couldn't read the client metadata: ${(e as Error).message}`); }
+  if (cl.meta.token_endpoint_auth_signing_alg && cl.meta.token_endpoint_auth_signing_alg !== alg) return fail(`This client's metadata says it signs with ${cl.meta.token_endpoint_auth_signing_alg}.`);
   const k = await keyFor(cl.jwks, parts.header.kid);
   if (!k || !(await verifySig(parts, k))) return fail('The client assertion\'s signature does not verify.');
-  c.note(`✓ Client assertion: ${parts.header.alg}, signed by a key in ${cl.meta.client_name ?? 'the agent'}'s jwks_uri, aud is my issuer (4.1).`);
-  return { ok: true, clientId: p.iss, meta: cl.meta };
+  c.note(`✓ Client assertion: ${alg}, signed by a key in ${cl.meta.client_name ?? 'the agent'}'s jwks_uri, aud is my issuer (4.1).`);
+  return { ok: true, clientId: p.iss, meta: cl.meta, method: 'private_key_jwt' };
 }
 
 // ── OAuth: authorize (Direct Sign-In, spec 4.2), token, revoke ────────────────────────────────────
 
-type AuthzReq = { client_id: string; client_name: string; redirect_uri: string; scope: string[]; state: string; challenge: string; vid: string };
+type AuthzReq = { client_id: string; client_name: string; redirect_uri: string; scope: string[]; state: string; challenge: string; vid: string; connector?: boolean; resource?: string | null };
+
+/**
+ * The Couch Tour account a connector (ChatGPT, Claude) signs in to: the presenter's, which is
+ * BotShield Verified with Couch Tour (DEMO_ACCOUNT_REF). DEMO SHORTCUT: no user database; the
+ * sign-in page's password is the demo key, so only the person running the demo signs in, and only
+ * their own BotShield app is ever asked.
+ */
+export const PRESENTER_ACCOUNT = 'fan_presenter';
+const SIGNIN_TRIES_PER_HOUR = 10;
+
+/** The resource a client asked for (RFC 8707): this Company, or its MCP endpoint. Null when absent; false when it's neither. */
+function resourceOf(env: CompanyEnv, raw: string | null): string | null | false {
+  if (!raw) return null;
+  const r = raw.replace(/\/+$/, '');
+  return r === origin(env) || r === mcpResource(env) ? r : false;
+}
 
 export async function authorize(req: Request, env: CompanyEnv): Promise<Response> {
   const stub = stubOf(env);
   const url = new URL(req.url);
   if (req.method === 'POST') {
     const f = await req.formData();
-    const pending = await stub.kvTake<AuthzReq>(`authz:${f.get('nonce')}`);
+    const nonce = String(f.get('nonce') ?? '');
+    const pending = await stub.kvGet<AuthzReq>(`authz:${nonce}`);
     if (!pending) return page('This sign-in has expired. Start again from the chat.');
     const back = new URL(pending.redirect_uri);
     back.searchParams.set('state', pending.state);
     back.searchParams.set('iss', issuer(env));
     const granted = pending.scope.filter((s) => f.getAll('scope').includes(s));
     if (f.get('decision') !== 'allow' || granted.length === 0) {
+      await stub.kvDel(`authz:${nonce}`);
       back.searchParams.set('error', 'access_denied');
       return Response.redirect(back.toString(), 302);
     }
+    let account: string;
+    if (pending.connector) {
+      const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+      const rl = await stub.hit(`rl-signin:${await visitorHash(ip)}`, SIGNIN_TRIES_PER_HOUR, 3600_000);
+      if (!rl.ok) return page('Too many sign-in attempts. Try again in an hour.');
+      const password = String(f.get('password') ?? '');
+      if (!env.DEMO_LIVE_KEY || !(await sameSecret(password, env.DEMO_LIVE_KEY))) {
+        return consentResponse(pending, nonce, 'That password isn\'t right.');
+      }
+      account = PRESENTER_ACCOUNT;
+    } else {
+      account = accountFor(await visitorHash(pending.vid));
+    }
+    await stub.kvDel(`authz:${nonce}`);
     const code = randomId('ctac_', 18);
-    const account = accountFor(await visitorHash(pending.vid));
-    await stub.kvPut(`code:${code}`, { client_id: pending.client_id, redirect_uri: pending.redirect_uri, challenge: pending.challenge, scope: granted, account }, 120_000);
+    await stub.kvPut(`code:${code}`, { client_id: pending.client_id, redirect_uri: pending.redirect_uri, challenge: pending.challenge, scope: granted, account, resource: pending.resource ?? null }, 120_000);
     back.searchParams.set('code', code);
     return Response.redirect(back.toString(), 302);
   }
@@ -300,36 +399,60 @@ export async function authorize(req: Request, env: CompanyEnv): Promise<Response
   };
   if (q.get('response_type') !== 'code') return back('unsupported_response_type', 'Use response_type=code.');
   if (q.get('code_challenge_method') !== 'S256' || !q.get('code_challenge')) return back('invalid_request', 'PKCE with S256 is required.');
-  const scope = (q.get('scope') ?? '').split(' ').filter(Boolean);
+  const resource = resourceOf(env, q.get('resource'));
+  if (resource === false) return back('invalid_target', `This Company's resources are ${origin(env)} and ${mcpResource(env)}.`);
+  // A connector: an MCP client asking for the MCP endpoint, or a client that isn't a Poppy agent
+  // (a public client, or one signing with RS256). It signs in to the presenter's account.
+  const connector = resource === mcpResource(env) || isPublic(cl.meta) || cl.meta.token_endpoint_auth_signing_alg === 'RS256';
+  // offline_access asks for a refresh token, which every sign-in here gets anyway.
+  let scope = (q.get('scope') ?? '').split(' ').filter((s) => s && s !== 'offline_access');
+  if (scope.length === 0 && connector) scope = [...CONNECTOR_SCOPES];
   if (scope.length === 0 || scope.some((s) => !SCOPES[s])) return back('invalid_scope', 'Ask for one or more of: ' + Object.keys(SCOPES).join(', '));
 
   const vid = cookie(req, 'ct_vid') ?? randomId('v_', 12);
   const nonce = randomId('', 18);
-  await stub.kvPut(`authz:${nonce}`, { client_id: clientId, client_name: cl.meta.client_name ?? clientId, redirect_uri: redirectUri, scope, state: q.get('state') ?? '', challenge: q.get('code_challenge')!, vid } satisfies AuthzReq, 600_000);
-  return new Response(consentPage(cl.meta.client_name ?? new URL(clientId).host, scope, nonce), {
-    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `ct_vid=${vid}; Path=/; Secure; SameSite=Lax; Max-Age=31536000`, 'X-Frame-Options': 'SAMEORIGIN' },
+  const pending: AuthzReq = { client_id: clientId, client_name: cl.meta.client_name ?? new URL(clientId).host, redirect_uri: redirectUri, scope, state: q.get('state') ?? '', challenge: q.get('code_challenge')!, vid, connector, resource };
+  await stub.kvPut(`authz:${nonce}`, pending, 600_000);
+  const res = consentResponse(pending, nonce);
+  res.headers.set('Set-Cookie', `ct_vid=${vid}; Path=/; Secure; SameSite=Lax; Max-Age=31536000`);
+  return res;
+}
+
+function consentResponse(p: AuthzReq, nonce: string, error?: string): Response {
+  return new Response(consentPage(p.client_name, p.scope, nonce, !!p.connector, error), {
+    status: error ? 401 : 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'SAMEORIGIN' },
   });
+}
+
+/** Compares two secrets without leaking where they differ. */
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([sha256b64(`couchtour-demo-signin:${a}`), sha256b64(`couchtour-demo-signin:${b}`)]);
+  let d = 0;
+  for (let i = 0; i < x.length; i++) d |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return d === 0 && x.length === y.length;
 }
 
 export async function token(req: Request, env: CompanyEnv, c: Collector): Promise<Response> {
   const stub = stubOf(env);
   const form = new URLSearchParams(await req.text());
-  const a = await checkAssertion(env, stub, form, c);
+  const a = await authenticateClient(env, stub, form, c);
   if (!a.ok) return a.res;
-  const resource = form.get('resource');
-  if (resource && resource !== origin(env)) return oauthErr('invalid_target', 'This Company has one resource: ' + origin(env));
+  const resource = resourceOf(env, form.get('resource'));
+  if (resource === false) return oauthErr('invalid_target', `This Company's resources are ${origin(env)} and ${mcpResource(env)}.`);
   const grant = form.get('grant_type');
 
   if (grant === 'authorization_code') {
-    const code = await stub.kvTake<{ client_id: string; redirect_uri: string; challenge: string; scope: string[]; account: string }>(`code:${form.get('code')}`);
+    const code = await stub.kvTake<{ client_id: string; redirect_uri: string; challenge: string; scope: string[]; account: string; resource?: string | null }>(`code:${form.get('code')}`);
     if (!code || code.client_id !== a.clientId) return oauthErr('invalid_grant', 'Unknown or used code.');
+    if (code.resource && resource && code.resource !== resource) return oauthErr('invalid_target', 'resource is not the one this code was issued for.');
     if (code.redirect_uri !== form.get('redirect_uri')) return oauthErr('invalid_grant', 'redirect_uri does not match.');
     if ((await pkceChallenge(form.get('code_verifier') ?? '')) !== code.challenge) return oauthErr('invalid_grant', 'PKCE code_verifier does not match.');
     c.note('✓ Code is one-time, for this client and redirect_uri; PKCE verifier matches the S256 challenge (4.2).');
     const refresh = randomId('ctrt_', 24);
     await stub.kvPut(`rt:${await sha256b64(refresh)}`, { client: a.clientId, account: code.account, scope: code.scope }, 30 * 86400_000);
     const access = await issueAccess(stub, a.clientId, code.account, code.scope, refresh);
-    c.note(`Signed in the demo fan with ${code.scope.join(', ')}. Issued an access token (1 hour) and a refresh token (4.7).`);
+    c.note(`Signed in ${code.account === PRESENTER_ACCOUNT ? 'the presenter' : 'the demo fan'} with ${code.scope.join(', ')}. Issued an access token (1 hour) and a refresh token (4.7).`);
     return json({ access_token: access, token_type: 'Bearer', expires_in: 3600, refresh_token: refresh, scope: code.scope.join(' ') });
   }
   if (grant === 'refresh_token') {
@@ -344,6 +467,7 @@ export async function token(req: Request, env: CompanyEnv, c: Collector): Promis
     return json({ access_token: access, token_type: 'Bearer', expires_in: 3600, scope: scope.join(' ') });
   }
   if (grant === MEDIATED_GRANT) {
+    if (a.method !== 'private_key_jwt') return oauthErr('unauthorized_client', 'Mediated Sign-In is for Poppy agents that sign their requests.');
     // Mediated Sign-In with a phone number. DEMO SHORTCUT: any well-formed number signs in to this
     // browser's demo account, with no one-time code (the extension's step 4 is optional). That a phone
     // number alone opens the account is the weak link the account holder's approval then covers.
@@ -373,7 +497,7 @@ async function issueAccess(stub: Stub, client: string, account: string, scope: s
 export async function revoke(req: Request, env: CompanyEnv, c: Collector): Promise<Response> {
   const stub = stubOf(env);
   const form = new URLSearchParams(await req.text());
-  const a = await checkAssertion(env, stub, form, c);
+  const a = await authenticateClient(env, stub, form, c);
   if (!a.ok) return a.res;
   const h = await sha256b64(form.get('token') ?? '');
   const rec = await stub.kvGet<{ client: string }>(`rt:${h}`);
@@ -388,7 +512,21 @@ export async function revoke(req: Request, env: CompanyEnv, c: Collector): Promi
 // ── Sessions (spec 5.2, 5.3) and access tokens (spec 4.5, 7) ──────────────────────────────────────
 
 export type Session = { client: string; clientName: string; sid: string; user: string };
-type Access = { client: string; account: string; scope: string[]; rt: string };
+export type Access = { client: string; account: string; scope: string[]; rt: string };
+
+/**
+ * The access token on a request (`Authorization: Bearer`), when this issuer issued it and it hasn't
+ * expired or been revoked. Opaque tokens, so this is the issuer's own lookup.
+ */
+export async function bearerAccess(env: CompanyEnv, req: Request): Promise<{ token: string | null; access: Access | null }> {
+  const auth = req.headers.get('Authorization') ?? '';
+  const m = /^Bearer\s+(\S+)$/i.exec(auth);
+  if (!m) return { token: null, access: null };
+  const stub = stubOf(env);
+  let access = await stub.kvGet<Access>(`at:${await sha256b64(m[1])}`);
+  if (access && (await stub.kvGet(`revoked:${access.rt}`))) access = null;
+  return { token: m[1], access };
+}
 
 export async function verifySession(req: Request, env: CompanyEnv, c: Collector): Promise<{ ok: true; s: Session; access: Access | null; token: string | null } | { ok: false; res: Response }> {
   const stub = stubOf(env);
@@ -516,7 +654,7 @@ function recording(base: typeof fetch, c: Collector, simulated: boolean): typeof
 /** The agent's client_name from its Poppy metadata, read through the demo's network (it can be this host). */
 const nameReader = (env: CompanyEnv) => async (clientId: string): Promise<string | null> => {
   try {
-    const m = await getJson<{ client_id?: string; client_name?: unknown }>(env, clientId);
+    const m = await clientDoc<{ client_id?: string; client_name?: unknown }>(env, clientId);
     const name = m.client_id === clientId && typeof m.client_name === 'string' ? m.client_name.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
     return name && name.length <= 60 ? name : null;
   } catch { return null; }
@@ -709,6 +847,61 @@ export async function placeOrder(env: CompanyEnv, d: Deps, c: Collector, input: 
     return DECLINE;
   } catch (e) { return approvalErrors(e, c); }
 }
+
+/**
+ * Buying tickets from a connector (ChatGPT, Claude): the BotShield Signal API in 'ask' mode. The
+ * assistant is the access token's client_id; the account is the signed-in one, which BotShield knows
+ * as the linked demo account. The first purchase asks the account holder in the BotShield app ("Let
+ * ChatGPT buy for you"); after they approve, each order is a fresh check and nobody is asked.
+ * Always live: connector sign-in is the presenter's.
+ */
+export async function connectorOrder(env: CompanyEnv, c: Collector, input: { account: string; clientId: string; quantity: number; approvalId: string | null }): Promise<Outcome> {
+  const stub = stubOf(env);
+  const tickets = Math.trunc(Number(input.quantity));
+  if (!(tickets >= 1 && tickets <= 8)) return { done: false, error: 'quantity must be 1 to 8', status: 400 };
+  c.ext = 'approval';
+  if (!env.DEMO_ACCOUNT_REF) { c.note('No BotShield link for this account.'); return NOT_VERIFIED; }
+  const doneKey = input.approvalId ? `order-apv:${input.account}:${input.approvalId}` : null;
+  if (doneKey) {
+    const prior = await stub.kvGet<Record<string, unknown>>(doneKey);
+    if (prior) { c.note('Already ordered for this approval: same result, nothing bought again.'); return { done: true, result: prior }; }
+  }
+  const api = new BotShieldApi({ secretKey: env.BOTSHIELD_SECRET_KEY, baseUrl: env.BOTSHIELD_API_URL, fetch: recording((i, n) => fetch(i, n), c, false) });
+  const gate = new AssistantGate({ api, agent: env.DEMO_AGENT_NAME, store: doStore(stub, 'connector-orders'), readName: nameReader(env), onUnapproved: 'ask', retryAfter: 5, checkEvery: 2 });
+  const orderRef = randomId('ord_', 10);
+  try {
+    const r = await gate.require({ account: env.DEMO_ACCOUNT_REF, assistant: { clientId: input.clientId, userId: null }, orderRef, approvalId: input.approvalId });
+    if (r.allowed) {
+      const acct = await getAccount(stub, input.account);
+      const order = { order_id: orderRef, tickets, at: new Date().toISOString() };
+      await stub.kvPut(`acct:${input.account}`, { ...acct, orders: [...(acct.orders ?? []), order] } satisfies Account, 7 * 86400_000);
+      const result = { ordered: true, verified: true, order_id: orderRef, show: ORDER.show, date: ORDER.date, tickets, total: `$${(tickets * ORDER.each).toFixed(2)}`, at: order.at, checked_at: r.checkedAt, check_id: r.checkId };
+      if (doneKey) await stub.kvPut(doneKey, result, 86400_000);
+      c.note(`◆ BotShield Signal API: verified, true. Nobody was asked. Ordered ${tickets} tickets.`);
+      return { done: true, result };
+    }
+    if ('approval' in r) { noteApproval(r.approval, c, !input.approvalId); return { done: false, approval: r.approval }; }
+    if ('refused' in r) c.note('Couldn\'t read the assistant\'s name from its client metadata, so nobody was asked.');
+    return DECLINE;
+  } catch (e) {
+    if (e instanceof NotLinkedError || (e instanceof BotShieldError && e.code === 'not_linked')) { c.note('This account isn\'t BotShield Verified with Couch Tour.'); return NOT_VERIFIED; }
+    return approvalErrors(e, c);
+  }
+}
+
+/** The signed-in account isn't BotShield Verified with Couch Tour, so nobody can be asked. */
+const NOT_VERIFIED: Outcome = { done: false, error: 'not_verified', status: 403 };
+
+export async function connectorAccount(env: CompanyEnv, account: string) {
+  const a = await getAccount(stubOf(env), account);
+  return {
+    account: account === PRESENTER_ACCOUNT ? 'The presenter (demo)' : 'Demo fan',
+    phone_on_file: maskPhone(a.phone),
+    tickets: [{ order_id: ORDER.id, show: ORDER.show, date: ORDER.date, quantity: ORDER.tickets }, ...(a.orders ?? []).map((x) => ({ order_id: x.order_id, show: ORDER.show, date: ORDER.date, quantity: x.tickets, at: x.at }))],
+  };
+}
+
+export const showsList = () => ({ shows: SHOWS.map((s) => ({ ...s, price_each: s.id === SHOWS[0].id ? `$${ORDER.each}` : null, on_sale: s.id === SHOWS[0].id })) });
 
 export async function enterPresale(env: CompanyEnv, d: Deps, c: Collector, input: { account: string; session: { client: string; sid: string; user: string }; presenceId: string | null }): Promise<Outcome> {
   const stub = stubOf(env);
@@ -923,18 +1116,19 @@ input[type=checkbox]{margin-top:4px;accent-color:var(--ct);width:16px;height:16p
 .btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}button{font:inherit;font-weight:600;padding:11px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
 button.go{background:var(--ct);border-color:var(--ct);color:#fff}.fine{font-size:12px;margin-top:14px}`;
 
-function consentPage(clientName: string, scope: string[], nonce: string): string {
+function consentPage(clientName: string, scope: string[], nonce: string, connector = false, error?: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in to Couch Tour</title><style>${SHEET_CSS}</style></head><body>
 <div class="brand"><span class="lockup"><img src="/img/couchtour-mark.svg" width="33" height="23" alt="" style="height:17px;width:auto"><img src="/img/couchtour-wordmark.svg" alt="Couch Tour" width="151" height="14" style="height:10px;width:auto"></span></div>
 <h1>Sign in to Couch Tour</h1>
-<div class="who">as the demo fan</div>
+<div class="who">${connector ? 'to the presenter\'s demo account' : 'as the demo fan'}</div>
 <p><b style="color:var(--ink)">${esc(clientName)}</b> is asking to:</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="nonce" value="${esc(nonce)}">
+${connector ? `<label style="display:block"><b>Password</b><span>This demo signs in one account, the presenter's. Its password is the demo key.</span><input type="password" name="password" autocomplete="current-password" required data-testid="signin-password" style="display:block;width:100%;margin-top:8px;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink)">${error ? `<span style="color:var(--ct);display:block;margin-top:6px">${esc(error)}</span>` : ''}</label>` : ''}
 ${scope.map((s) => `<label><input type="checkbox" name="scope" value="${esc(s)}" checked><div><b>${esc(s)}</b><span>${esc(SCOPES[s].description)}.</span></div></label>`).join('')}
-<div class="btns"><button class="go" name="decision" value="allow" data-testid="consent-allow">Allow</button><button name="decision" value="deny">Don't allow</button></div>
+<div class="btns"><button class="go" name="decision" value="allow" data-testid="consent-allow">Allow</button><button name="decision" value="deny" formnovalidate>Don't allow</button></div>
 </form>
-<p class="fine">A demo: there's no password. A real Couch Tour sign-in asks you to sign in here first. You can sign out at any time, which ends this access.</p>
+<p class="fine">${connector ? 'Purchases by your assistant are checked with BotShield: the first one asks the account holder to approve it in the BotShield app. You can disconnect at any time, which ends this access.' : 'A demo: there\'s no password. A real Couch Tour sign-in asks you to sign in here first. You can sign out at any time, which ends this access.'}</p>
 </body></html>`;
 }
 
