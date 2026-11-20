@@ -23,17 +23,18 @@ npm install @botshield/poppy
 - **BotShield Verified accounts.** An account holder can be asked only once their account is
   BotShield Verified with you; [docs.botshield.ai](https://docs.botshield.ai) covers how a customer
   becomes verified, and `reference/company.ts` shows the step in a demo (`/account/link`).
-- **To know the agent belongs to a verified customer:** an Action in the Console with the key
+- **For the BotShield Signal API (Match at each order):** an Action in the Console with the key
   `assistant`, and the name your requests are shown under. Your server reads the agent's name from
   the Poppy metadata at its `client_id`.
 - **For approvals of an order or change:** an Action in the Console (its key, here `plan`).
 - **For a Session with no signed-in account:** a Human Gate in the Console.
 
-## The agent belongs to a verified customer
+## BotShield Signal API: Match at each order
 
-`AssistantGate` asks the account holder once whether an agent may order for them, then checks at
-every order. The account holder can remove the agent in the BotShield app at any time, and the next
-check is no match.
+`AssistantGate` is the BotShield Signal API, for agentic commerce. The account holder approves an
+agent once, with their passkey. At every order after that your server gets a fresh answer: **Match**,
+the agent is bound to a BotShield Verified customer, or no match. On a match, nobody is asked. The
+account holder can remove the agent in the BotShield app at any time, and the next check is no match.
 
 ```ts
 import { BotShieldApi, BotShieldError, AssistantGate, approvalResponse } from '@botshield/poppy';
@@ -70,8 +71,27 @@ async function checkAgent(
 }
 ```
 
-A match says whose agent it is. For the customer's approval of an order's exact terms, use
-`AccountHolderApproval`, below.
+Match says the agent is bound to a BotShield Verified customer. For the customer's approval of an
+order's exact terms, use `AccountHolderApproval`, below.
+
+### Decide when to ask (`onUnapproved`, from 0.3.0)
+
+By default (`'ask'`), an agent that isn't approved starts the account holder's approval. With
+`onUnapproved: 'signal'`, nobody is asked: `require()` returns `{ allowed: false, match: false }` for
+an agent that was never approved or no longer matches, and your server decides. Decline with your
+usual answer, use your own checks, or call `ask()` when you want the account holder asked.
+
+```ts
+const agents = new AssistantGate({ api, agent: 'yourcompany', onUnapproved: 'signal' });
+
+const r = await agents.require({ account, assistant, orderRef, approvalId });
+if (r.allowed) {
+  // Match: place the order.
+} else if ('match' in r) {
+  // No match, and nobody was asked. Decline, or ask the account holder:
+  // const asked = await agents.ask({ account, assistant, orderRef, approvalId: null });
+}
+```
 
 ## The verified customer approved this order or change
 
