@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `@botshield/poppy`: `AssistantGate` takes `onUnapproved: 'ask' | 'signal'`. `'signal'` asks
+  nobody when the assistant isn't approved, whether the gate has never seen it or the check comes
+  back no match, and returns `{ allowed: false, match: false }` for the Company to act on. The new
+  `ask()` starts the account holder's approval when the Company chooses. **The default stays
+  `'ask'`**, today's behaviour, so existing users see no change; `GateResult` gains the
+  `{ allowed: false, match: false }` member, which code that switches exhaustively on it must
+  handle. `botshield.ai/approval` section 9a steps 1 and 4 now say the Company decides when to ask.
+
 - `demo/couchtour` (poppy-demo.couchtour.app) rebuilt as a live, Atlas-style demo. A Personal Agent
   driven by Claude makes real Poppy requests to the demo Couch Tour, and the page shows each one:
   discovery, Sessions with delegated keys, Direct Sign-In (PKCE) or Mediated Sign-In by phone, the
