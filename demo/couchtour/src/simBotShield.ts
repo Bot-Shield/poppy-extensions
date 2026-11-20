@@ -8,7 +8,8 @@
  * `https://sim.botshield.invalid`, which no real verifier accepts.
  *
  * The "BotShield app" is the second phone on the demo page: `/sim/phone` lists what waits for the
- * visitor, and `/sim/phone/answer` is their Confirm or "This isn't me".
+ * visitor and the agents they approved, `/sim/phone/answer` is their Confirm or "This isn't me",
+ * and `/sim/phone/remove` removes an approved agent.
  */
 import type { DemoStub } from './state.ts';
 import { newEs256, randomId, signEs256, type Jwk } from './jose.ts';
@@ -27,6 +28,11 @@ export type SimAction = {
 export type SimCheck = {
   request_id: string; gate: string; vh: string; status: 'pending' | 'completed' | 'failed' | 'expired'; reason: string | null;
   expires_at: string; token: string | null; spent: boolean; chat?: string;
+};
+
+/** An agent the account holder approved to buy at Couch Tour (the BotShield Signal API's record). */
+export type SimAssistant = {
+  pairwise_id: string; ref: string; client: string; user: string; name: string; vh: string; approved_at: string; removed: boolean; chat?: string;
 };
 
 async function simKey(stub: Stub): Promise<Jwk> {
@@ -81,6 +87,27 @@ export function simBotShieldFetch(stub: Stub, ctx: { vh: string; chat?: string }
           ...(a.status === 'approved' ? { token: a.spent ? null : a.token, token_expires_in: a.spent ? 0 : 300 } : {}),
         });
       }
+      case 'gates-api/assistants/register': {
+        if (auth !== `Bearer ${SIM_KEY}`) return refuse('Invalid key.', 401, 'invalid_key');
+        const a = await stub.kvGet<SimAction>(`sim:act:${body.request_id}`);
+        if (!a || a.status !== 'approved' || !a.act.startsWith('assistant:')) return refuse('Not approved.', 404, 'not_approved');
+        const pairwise = `BA_sim_${randomId('', 20)}`;
+        const name = /^Let (.+) buy for you$/.exec(a.act_label ?? '')?.[1] ?? 'Your agent';
+        const r: SimAssistant = {
+          pairwise_id: pairwise, ref: String(body.partner_user_ref ?? ''), client: String(body.assistant_client_id ?? ''), user: String(body.assistant_user_id ?? ''),
+          name, vh: a.vh, approved_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), removed: false, chat: a.chat,
+        };
+        await stub.kvPut(`sim:asst:${pairwise}`, r, 7 * 86400_000);
+        await stub.kvPut(`sim:asstlist:${a.vh}:${pairwise}`, 1, 7 * 86400_000);
+        return ok({ pairwise_id: pairwise, assistant_name: name, approved_at: r.approved_at });
+      }
+      case 'gates-api/assistants/check': {
+        if (auth !== `Bearer ${SIM_KEY}`) return refuse('Invalid key.', 401, 'invalid_key');
+        const r = await stub.kvGet<SimAssistant>(`sim:asst:${body.pairwise_id}`);
+        // No match, with no reason (approval §9a step 3): removed, another account, or another agent.
+        const match = !!r && !r.removed && r.ref === body.partner_user_ref && r.client === body.assistant_client_id && r.user === String(body.assistant_user_id ?? '');
+        return ok({ match, checked_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), check_id: `chk_sim_${randomId('', 12)}` });
+      }
       case 'sdk/create-session':
         return ok({ anchor_grant_token: `bss_sim_${randomId('', 9)}` });
       case 'sdk/create-verification-link': {
@@ -130,11 +157,39 @@ export async function phoneInbox(stub: Stub, vh: string): Promise<Array<Record<s
         if (a?.status === 'queued' && Date.parse(a.expires_at) > Date.now()) out.push({ kind: 'approval', request_id: a.request_id, title: a.act_label, details: a.details ?? [], expires_at: a.expires_at });
       } else {
         const c = await stub.kvGet<SimCheck>(`sim:chk:${id}`);
-        if (c?.status === 'pending' && Date.parse(c.expires_at) > Date.now()) out.push({ kind: 'presence', request_id: c.request_id, title: 'Confirm you\'re here, for Couch Tour', details: [{ label: 'For', value: 'Rising Wave Live · Red Rocks presale' }, { label: 'Rule', value: 'One entry per person' }], expires_at: c.expires_at });
+        if (c?.status === 'pending' && Date.parse(c.expires_at) > Date.now()) out.push({ kind: 'presence', request_id: c.request_id, title: 'Confirm with your passkey, for Couch Tour', details: [{ label: 'For', value: 'Rising Wave Live · Red Rocks presale' }], expires_at: c.expires_at });
       }
     }
   }
   return out;
+}
+
+/** The agents the visitor approved to buy at Couch Tour, as the BotShield app lists them. */
+export async function phoneAgents(stub: Stub, vh: string): Promise<Array<Record<string, unknown>>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const id of await stub.kvList(`sim:asstlist:${vh}:`)) {
+    const r = await stub.kvGet<SimAssistant>(`sim:asst:${id}`);
+    if (!r || r.removed) continue;
+    let host = r.client;
+    try { host = new URL(r.client).host; } catch { /* shown as it is */ }
+    out.push({ pairwise_id: r.pairwise_id, name: r.name, from: host, company: 'Couch Tour (demo)', approved_at: r.approved_at });
+  }
+  return out;
+}
+
+/** The visitor removes an approved agent in the simulated BotShield app. Every check after this is no match. */
+export async function phoneRemove(stub: Stub, vh: string, pairwiseId: string): Promise<{ ok: boolean; name?: string }> {
+  const r = await stub.kvGet<SimAssistant>(`sim:asst:${pairwiseId}`);
+  if (!r || r.vh !== vh || r.removed) return { ok: false };
+  r.removed = true;
+  await stub.kvPut(`sim:asst:${pairwiseId}`, r, 7 * 86400_000);
+  await stub.kvDel(`sim:asstlist:${vh}:${pairwiseId}`);
+  return { ok: true, name: r.name };
+}
+
+/** Removes every agent the visitor approved (the demo account's reset). */
+export async function removeAllAgents(stub: Stub, vh: string): Promise<void> {
+  for (const id of await stub.kvList(`sim:asstlist:${vh}:`)) await phoneRemove(stub, vh, id);
 }
 
 /** The visitor's answer on the simulated BotShield app. */
@@ -146,7 +201,7 @@ export async function phoneAnswer(stub: Stub, vh: string, input: { request_id: s
       c.status = 'failed';
       c.reason = 'declined';
     } else if (!(await stub.kvAdd(`sim:gate:${c.gate}:${vh}`, Date.now(), 86400_000))) {
-      // The gate's rule: one pass per person. This person has already been counted at this gate.
+      // The gate's rule: one pass per BotShield account at this gate. A second pass is refused.
       c.status = 'failed';
       c.reason = 'already_counted';
     } else {

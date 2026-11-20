@@ -19,11 +19,11 @@ import { demoPage } from './page.ts';
 import { setLocalHandler } from './net.ts';
 import { Collector } from './trace.ts';
 import {
-  authServerMetadata, authorize, asHttp, changePhone, companyApi, deps, enterPresale, json, liveAllowed, openApi, poppyJson, protectedResource, refund, stubOf, visitorHash,
+  accountFor, authServerMetadata, authorize, asHttp, changePhone, companyApi, deps, enterPresale, json, liveAllowed, openApi, placeOrder, poppyJson, protectedResource, refund, stubOf, visitorHash,
   type Outcome,
 } from './company.ts';
 import { agentJwks, clientMetadata, events, loadCtx, poll, resumeAfterSignIn, signInCallback, signInWithPhone, signOut, startChat, userMessage, validChatId, type AgentEnv } from './agent.ts';
-import { phoneAnswer, phoneInbox } from './simBotShield.ts';
+import { phoneAgents, phoneAnswer, phoneInbox, phoneRemove, removeAllAgents } from './simBotShield.ts';
 
 export { DemoState };
 
@@ -64,7 +64,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
   }
 
   // The page's calls to its agent.
-  const m = /^\/agent\/chat\/([^/]+)\/(start|message|resume|poll|signout|signin-phone|events)$/.exec(path);
+  const m = /^\/agent\/chat\/([^/]+)\/(start|message|resume|poll|signout|signin-phone|events|unknown-agent)$/.exec(path);
   if (m) return chatRoute(req, env, m[1], m[2]);
   if (req.method === 'POST' && path === '/agent/reset') {
     const b = (await req.json().catch(() => ({}))) as { vid?: string };
@@ -73,6 +73,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     const stub = stubOf(env);
     for (const k of [`vtok:${vh}`, `acct:fan_${vh}`]) await stub.kvDel(k);
     await stub.kvDelPrefix(`sim:inbox:${vh}:`);
+    await removeAllAgents(stub, vh);
     for (const g of await stub.kvList('sim:gate:')) if (g.endsWith(`:${vh}`)) await stub.kvDel(`sim:gate:${g}`);
     return json({ reset: true });
   }
@@ -81,7 +82,17 @@ async function handle(req: Request, env: Env): Promise<Response> {
   if (GET && path === '/sim/phone') {
     const vid = url.searchParams.get('vid');
     if (!validVid(vid)) return json({ error: 'bad_request' }, 400);
-    return json({ items: await phoneInbox(stubOf(env), await visitorHash(vid)) });
+    const vh = await visitorHash(vid);
+    return json({ items: await phoneInbox(stubOf(env), vh), agents: await phoneAgents(stubOf(env), vh) });
+  }
+  if (req.method === 'POST' && path === '/sim/phone/remove') {
+    const b = (await req.json().catch(() => ({}))) as { vid?: string; pairwise_id?: string; chat?: string };
+    if (!validVid(b.vid) || typeof b.pairwise_id !== 'string') return json({ error: 'bad_request' }, 400);
+    const r = await phoneRemove(stubOf(env), await visitorHash(b.vid), b.pairwise_id);
+    if (r.ok && typeof b.chat === 'string' && validChatId(b.chat)) {
+      await stubOf(env).append(`ev:${b.chat}`, { kind: 'row', lane: 'phone', title: `The account holder removes ${r.name} in the BotShield app`, result: 'Every check after this is no match', simulated: true, tags: [{ s: 'approval § 9a', ext: 'approval' }], agentNotes: ['Simulated: in the real flow this happens in the BotShield app, on the account holder\'s own phone.', 'Couch Tour isn\'t told. Its next BotShield Signal API check comes back no match (approval §9a step 4).'] });
+    }
+    return json({ ok: r.ok });
   }
   if (req.method === 'POST' && path === '/sim/phone/answer') {
     const b = (await req.json().catch(() => ({}))) as { vid?: string; request_id?: string; answer?: string };
@@ -91,8 +102,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
       const approval = r.kind === 'approval';
       const title = approval
         ? (r.outcome === 'approved' ? 'The account holder approves, with their passkey' : 'The account holder taps "This isn\'t me"')
-        : (b.answer === 'confirm' ? 'A person confirms, with their passkey' : 'The person declines');
-      const result = approval ? (r.outcome === 'approved' ? 'BotShield signs the answer for Couch Tour' : 'Declined') : r.outcome === 'passed' ? 'Counted once at this gate' : r.outcome === 'already_counted' ? 'Already counted at this gate: refused' : 'Declined';
+        : (b.answer === 'confirm' ? 'The account holder confirms, with their passkey' : 'The account holder declines');
+      const result = approval ? (r.outcome === 'approved' ? 'BotShield signs the approval for Couch Tour' : 'Declined') : r.outcome === 'passed' ? 'BotShield signs the answer for Couch Tour' : r.outcome === 'already_counted' ? 'Refused at the gate' : 'Declined';
       await stubOf(env).append(`ev:${r.chat}`, { kind: 'row', lane: 'phone', title, result, simulated: true, tags: [{ s: approval ? 'approval § 8' : 'presence § 7', ext: approval ? 'approval' : 'presence' }], agentNotes: ['Simulated: in the real flow this happens in the BotShield app, on the account holder\'s own phone.'] });
     }
     return json({ ok: r.ok, outcome: r.outcome ?? null });
@@ -196,6 +207,7 @@ async function chatRoute(req: Request, env: Env, id: string, action: string): Pr
       return json({ ok: true, pending: !!ctx.chat.pending });
     }
     if (action === 'signout') { await signOut(ctx); return json({ ok: true }); }
+    if (action === 'unknown-agent') { await unknownAgentOrder(env, ctx); return json({ ok: true }); }
     return json({ error: 'not_found' }, 404);
   } catch (e) {
     console.error('[chat]', action, e instanceof Error ? e.message : String(e));
@@ -204,6 +216,29 @@ async function chatRoute(req: Request, env: Env, id: string, action: string): Pr
   } finally {
     await stub.kvDel(`busy:${id}`);
   }
+}
+
+/**
+ * Debug: an agent Couch Tour has never seen tries to buy on this visitor's account. It isn't signed
+ * in by the account holder, so Couch Tour won't ask them; the BotShield Signal API has no approval
+ * for it, so the answer is no match, and nobody is asked.
+ */
+async function unknownAgentOrder(env: Env, ctx: NonNullable<Awaited<ReturnType<typeof loadCtx>>>) {
+  const c = new Collector();
+  const account = accountFor(ctx.chat.vh);
+  const d = deps(env, ctx.chat.mode === 'live', c, { vh: ctx.chat.vh, chat: ctx.chat.id });
+  const assistant = { clientId: 'https://unknown-agent.example/agent.json', userId: 'usr_unknown' };
+  const o = await placeOrder(env, d, c, { account, assistant, quantity: 2, approvalId: null, mayAsk: false });
+  const res = asHttp(o);
+  const body = await res.json().catch(() => null);
+  await ctx.emit({ kind: 'group', title: 'Debug: an unknown agent tries to buy two tickets' });
+  await ctx.emit({
+    kind: 'row', lane: 'poppy', title: 'Buy tickets, as an agent Couch Tour has never seen', result: o.done ? 'Ordered' : 'Declined. Not done',
+    tags: [{ s: 'approval § 9a', ext: 'approval' }], rtags: [{ s: 'approval § 9a', ext: 'approval' }],
+    agentNotes: [`Simulated from the Debug menu: ${assistant.clientId} orders on this account. It isn't the agent in the chat, and the account holder never signed it in.`],
+    companyNotes: c.notes, req: { method: 'POST', url: `https://${env.DEMO_HOST}/api/orders`, body: { quantity: 2 } }, res: { status: res.status, body },
+  });
+  for (const call of c.calls) await ctx.emit(call);
 }
 
 const handler = {
@@ -232,7 +267,7 @@ const TOOLS = [
   },
   {
     name: 'enter_presale',
-    description: 'Enter the customer in the presale for Rising Wave Live · Red Rocks. One entry per person. If the result has a link, show it to the user to confirm in the BotShield app, then call this tool again with the presence_id.',
+    description: 'Enter the customer in the presale for Rising Wave Live · Red Rocks. BotShield confirms the account holder with their passkey. If the result has a link, show it to the user to confirm in the BotShield app, then call this tool again with the presence_id.',
     inputSchema: { type: 'object', properties: { presence_id: { type: 'string', description: 'From an earlier result, when repeating the request.' } } },
   },
   {

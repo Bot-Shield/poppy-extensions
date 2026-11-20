@@ -9,6 +9,13 @@
   `'ask'`**, today's behaviour, so existing users see no change; `GateResult` gains the
   `{ allowed: false, match: false }` member, which code that switches exhaustively on it must
   handle. `botshield.ai/approval` section 9a steps 1 and 4 now say the Company decides when to ask.
+- `demo/couchtour`: ticket orders on the BotShield Signal API (`POST /api/orders`, `placeOrder`), with
+  `AssistantGate` in `'signal'` mode. The first order asks the account holder once ("Let Demo agent
+  buy for you"); later orders are a silent Match. The simulated BotShield answers
+  `gates-api/assistants/register` and `/check`, and its phone lists approved agents with Remove. Debug
+  has "Try as an unknown agent". The presale chip is gone (the presale still works). Every refusal
+  reaches the agent as one plain `declined`, with the reason in the trace. The phone change has its
+  own Action key (`DEMO_PHONE_ACTION`, now `phone`). The demo key leaves the address bar after it's read.
 
 - `demo/couchtour` (poppy-demo.couchtour.app) rebuilt as a live, Atlas-style demo. A Personal Agent
   driven by Claude makes real Poppy requests to the demo Couch Tour, and the page shows each one:

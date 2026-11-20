@@ -1,7 +1,8 @@
 /**
  * Couch Tour (demo) as a Poppy Company: discovery (spec 3), an OAuth issuer with Direct Sign-In
  * (spec 4.1, 4.2, 4.4, 4.6, 4.7), Session verification (spec 5.3), APIs (spec 7), and a small Company
- * Agent for conversations (spec 8). Its account actions use BotShield's extensions.
+ * Agent for conversations (spec 8). Its account actions use BotShield's extensions, and its ticket
+ * orders use the BotShield Signal API (the purchase gate, approval §9a).
  *
  * DEMO SHORTCUTS, on purpose:
  * - One sign-in account, "the demo fan". The consent page has no password: each browser gets its own
@@ -13,7 +14,7 @@
  *   (simBotShield.ts). Live mode, with the demo key, calls BotShield's production sandbox.
  */
 import {
-  AccountHolderApproval, BotShieldApi, HumanPresence, NotLinkedError, StillPerformingError, isTransient,
+  AccountHolderApproval, AssistantGate, BotShieldApi, BotShieldError, HumanPresence, NotLinkedError, StillPerformingError, isTransient,
   APPROVAL_EXTENSION, PRESENCE_EXTENSION, APPROVAL_ID_HEADER, PRESENCE_ID_HEADER, declares,
   approvalResponse, presenceResponse, type ApprovalObject, type PresenceObject,
 } from '../../../packages/poppy/src/index.ts';
@@ -30,6 +31,7 @@ export interface CompanyEnv extends NetEnv {
   DEMO_ACCOUNT_REF: string;
   DEMO_AGENT_NAME: string;
   DEMO_REFUND_ACTION: string;
+  /** The phone number change's own Action key. Default `phone`. */
   DEMO_PHONE_ACTION?: string;
   DEMO_PRESENCE_GATE: string;
   DEMO_LIVE_KEY?: string;
@@ -47,11 +49,11 @@ export const SCOPES: Record<string, { description: string; hints: { changes: 'no
     hints: { changes: 'none', personal_data: true },
   },
   'account:write': {
-    description: 'Change your account and orders, like the phone number on file or a refund. Each change also needs the account holder\'s yes in the BotShield app',
+    description: 'Buy tickets, and change your account and orders, like the phone number on file or a refund. Each account change needs the account holder\'s yes in the BotShield app; so does the first purchase by your agent',
     hints: { changes: 'irreversible', personal_data: true },
   },
   presale: {
-    description: 'Enter presales for you. Each entry needs a person to confirm in the BotShield app, and counts once per person',
+    description: 'Enter presales for you. Each entry needs the account holder to confirm with their passkey in the BotShield app',
     hints: { changes: 'reversible', personal_data: false },
   },
 };
@@ -63,7 +65,7 @@ const MEDIATED_SCOPES = ['account:read', 'account:write', 'presale'];
 export const ORDER = { id: 'ord_RW-4417', show: 'Rising Wave Live · Red Rocks', date: 'Fri, Dec 5', tickets: 2, each: 48, originalCard: '0912' };
 const DEFAULT_PHONE = '+17205550187';
 const SHOWS = [
-  { id: 'shw_rw-redrocks', artist: 'Rising Wave', venue: 'Red Rocks Amphitheatre, Morrison, CO', starts_at: '2026-12-05T19:30:00-07:00', doors: '6:00 PM', presale: { opens_at: '2026-11-20T10:00:00-07:00', rule: 'One entry per person' } },
+  { id: 'shw_rw-redrocks', artist: 'Rising Wave', venue: 'Red Rocks Amphitheatre, Morrison, CO', starts_at: '2026-12-05T19:30:00-07:00', doors: '6:00 PM', presale: { opens_at: '2026-11-20T10:00:00-07:00', rule: 'The account holder confirms with their passkey' } },
   { id: 'shw_lm-ogden', artist: 'Low Meadow', venue: 'Ogden Theatre, Denver, CO', starts_at: '2026-12-12T20:00:00-07:00', doors: '7:00 PM' },
 ];
 
@@ -85,7 +87,7 @@ export function poppyJson(env: CompanyEnv) {
       ],
     },
     apis: [
-      { type: 'openapi', url: `${o}/openapi.json`, description: 'Upcoming shows, your account, changing the phone number on file, refunds, and presale entries' },
+      { type: 'openapi', url: `${o}/openapi.json`, description: 'Upcoming shows, buying tickets, your account, changing the phone number on file, refunds, and presale entries' },
       { type: 'mcp', url: `${o}/mcp`, description: 'Refunds, presale entries and phone number changes, as MCP tools (needs the demo key)' },
     ],
     extensions: {
@@ -131,7 +133,7 @@ export function openApi(env: CompanyEnv) {
     info: {
       title: 'Couch Tour (demo) API',
       version: '1.0.0',
-      description: 'A demo ticketing API that speaks the Personal Agent Protocol. Account changes need the account holder\'s yes in the BotShield app (botshield.ai/approval); presale entries need a person to confirm (botshield.ai/human-presence).',
+      description: 'A demo ticketing API that speaks the Personal Agent Protocol. Account changes need the account holder\'s yes in the BotShield app (botshield.ai/approval). Ticket orders are checked with the BotShield Signal API: the account holder approves an agent once, and each order after that is a fresh Match (botshield.ai/approval section 9a). Presale entries need the account holder to confirm (botshield.ai/human-presence).',
     },
     servers: [{ url: o }],
     components: {
@@ -146,6 +148,16 @@ export function openApi(env: CompanyEnv) {
       '/api/session': { get: { operationId: 'whoami', summary: 'Who the Session belongs to, and whether it is signed in', security: [{}], responses: { '200': err('The Session') } } },
       '/api/shows/next': { get: { operationId: 'getNextShow', summary: 'The next show on the calendar, with its presale', security: [{}], responses: { '200': err('The next show') } } },
       '/api/account': { get: { operationId: 'getAccount', summary: 'The signed-in account: the phone number on file (last two digits), tickets and presale entries', security: [{ couchtour: ['account:read'] }], responses: { '200': err('The account') } } },
+      '/api/orders': {
+        post: {
+          operationId: 'placeOrder',
+          summary: `Buy tickets to ${ORDER.show} (${ORDER.date}), $${ORDER.each} each. The first purchase by an agent may need the account holder's yes in the BotShield app; after that, each order is checked without asking`,
+          security: [{ couchtour: ['account:write'] }],
+          parameters: [{ name: APPROVAL_ID_HEADER, in: 'header', required: false, schema: { type: 'string' }, description: 'When repeating the request, the approval_id from the earlier response' }],
+          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['quantity'], properties: { quantity: { type: 'integer', minimum: 1, maximum: 8 } } } } } },
+          responses: { '200': err('Ordered'), '403': err('`account_holder_approval_required` (botshield.ai/approval), or `declined`: Couch Tour won\'t complete this order') },
+        },
+      },
       '/api/account/phone': {
         post: {
           operationId: 'updatePhone',
@@ -169,10 +181,10 @@ export function openApi(env: CompanyEnv) {
       '/api/presale/enter': {
         post: {
           operationId: 'enterPresale',
-          summary: `Enter the presale for ${ORDER.show}. One entry per person: a person confirms in the BotShield app`,
+          summary: `Enter the presale for ${ORDER.show}. BotShield confirms the account holder with their passkey`,
           security: [{ couchtour: ['presale'] }],
           parameters: [{ name: PRESENCE_ID_HEADER, in: 'header', required: false, schema: { type: 'string' } }],
-          responses: { '200': err('Entered'), '403': err('`human_presence_required` (botshield.ai/human-presence): a person needs to confirm in the BotShield app. Show the link, then repeat the request with the `BotShield-Presence-Id` header.') },
+          responses: { '200': err('Entered'), '403': err('`human_presence_required` (botshield.ai/human-presence): the account holder needs to confirm in the BotShield app. Show the link, then repeat the request with the `BotShield-Presence-Id` header.') },
         },
       },
     },
@@ -458,6 +470,8 @@ export type Deps = {
   mode: 'live' | 'simulated';
   refunds: AccountHolderApproval;
   phones: AccountHolderApproval;
+  /** Ticket orders: the BotShield Signal API, in 'signal' mode, so a no match asks nobody. */
+  orders: AssistantGate;
   presence: HumanPresence;
   /** BotShield's reference for a Couch Tour account: the linked demo account when live. */
   ref: (account: string) => string;
@@ -465,11 +479,13 @@ export type Deps = {
 
 const BS_TITLES: Record<string, [string, (b: any) => string, string]> = {
   'gates-api/actions/request': ['Ask the account holder to approve', () => 'Sent to their BotShield app', '§ 9'],
-  'gates-api/actions/request-status': ['Has the account holder answered?', (b) => (b?.status === 'queued' ? 'Not yet' : `${b?.status}${b?.token ? ', with a signed answer' : ''}`), '§ 9'],
-  'sdk/verify-token': ['Check the signed answer, once', (b) => (b?.valid ? 'Valid. Now spent' : 'Not valid'), '§ 8'],
+  'gates-api/actions/request-status': ['Has the account holder answered?', (b) => (b?.status === 'queued' ? 'Not yet' : `${b?.status}${b?.token ? ', with a signed approval' : ''}`), '§ 9'],
+  'sdk/verify-token': ['Check the signed approval, once', (b) => (b?.valid ? 'Valid. Now spent' : 'Not valid'), '§ 8'],
+  'gates-api/assistants/register': ['Register the approved agent', () => 'BotShield ID registered. It stays with Couch Tour', '§ 9a'],
+  'gates-api/assistants/check': ['BotShield Signal API', (b) => (b?.match ? 'Match. Nobody was asked' : 'No match. No reason given'), '§ 9a'],
   'sdk/create-session': ['Open a presence check', () => 'Grant for one check', '§ 8'],
   'sdk/create-verification-link': ['… at the presale gate', (b) => (b?.web_url ? 'Link for the person' : 'Refused'), '§ 8'],
-  'verification/status': ['Has a person confirmed?', (b) => ({ pending: 'Not yet', completed: 'Confirmed, with a signed answer', failed: `Refused${b?.reason ? ` (${String(b.reason).replace(/_/g, ' ')})` : ''}`, expired: 'Expired' } as Record<string, string>)[b?.status] ?? String(b?.status), '§ 8'],
+  'verification/status': ['Has the account holder confirmed?', (b) => ({ pending: 'Not yet', completed: 'Confirmed, with a signed answer', failed: b?.reason === 'already_counted' ? 'Refused at the gate' : `Refused${b?.reason ? ` (${String(b.reason).replace(/_/g, ' ')})` : ''}`, expired: 'Expired' } as Record<string, string>)[b?.status] ?? String(b?.status), '§ 8'],
 };
 
 /** Wraps BotShield's fetch so each call Couch Tour makes is recorded for the inspector (scrubbed). */
@@ -497,6 +513,15 @@ function recording(base: typeof fetch, c: Collector, simulated: boolean): typeof
   }) as typeof fetch;
 }
 
+/** The agent's client_name from its Poppy metadata, read through the demo's network (it can be this host). */
+const nameReader = (env: CompanyEnv) => async (clientId: string): Promise<string | null> => {
+  try {
+    const m = await getJson<{ client_id?: string; client_name?: unknown }>(env, clientId);
+    const name = m.client_id === clientId && typeof m.client_name === 'string' ? m.client_name.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
+    return name && name.length <= 60 ? name : null;
+  } catch { return null; }
+};
+
 export function deps(env: CompanyEnv, live: boolean, c: Collector, ctx: { vh: string; chat?: string }): Deps {
   const stub = stubOf(env);
   if (live) {
@@ -504,8 +529,9 @@ export function deps(env: CompanyEnv, live: boolean, c: Collector, ctx: { vh: st
     return {
       mode: 'live',
       refunds: new AccountHolderApproval({ api, agent: env.DEMO_AGENT_NAME, actionKey: env.DEMO_REFUND_ACTION, store: doStore(stub, 'approval') }),
-      // The phone change reuses the refund action key unless DEMO_PHONE_ACTION names its own (see README).
-      phones: new AccountHolderApproval({ api, agent: env.DEMO_AGENT_NAME, actionKey: env.DEMO_PHONE_ACTION || env.DEMO_REFUND_ACTION, store: doStore(stub, 'approval-phone') }),
+      // The phone change has its own Action key (DEMO_PHONE_ACTION, default `phone`), placed in the Console.
+      phones: new AccountHolderApproval({ api, agent: env.DEMO_AGENT_NAME, actionKey: env.DEMO_PHONE_ACTION || 'phone', store: doStore(stub, 'approval-phone') }),
+      orders: new AssistantGate({ api, agent: env.DEMO_AGENT_NAME, store: doStore(stub, 'orders'), readName: nameReader(env), onUnapproved: 'signal' }),
       presence: new HumanPresence({ api, gate: env.DEMO_PRESENCE_GATE, store: doStore(stub, 'presence') }),
       ref: () => env.DEMO_ACCOUNT_REF,
     };
@@ -515,6 +541,7 @@ export function deps(env: CompanyEnv, live: boolean, c: Collector, ctx: { vh: st
     mode: 'simulated',
     refunds: new AccountHolderApproval({ api, agent: env.DEMO_AGENT_NAME, actionKey: 'refund', store: doStore(stub, 'sim-approval'), retryAfter: 3, checkEvery: 2 }),
     phones: new AccountHolderApproval({ api, agent: env.DEMO_AGENT_NAME, actionKey: 'phone', store: doStore(stub, 'sim-approval-phone'), retryAfter: 3, checkEvery: 2 }),
+    orders: new AssistantGate({ api, agent: env.DEMO_AGENT_NAME, store: doStore(stub, 'sim-orders'), readName: nameReader(env), onUnapproved: 'signal', retryAfter: 3, checkEvery: 2 }),
     presence: new HumanPresence({ api, gate: env.DEMO_PRESENCE_GATE, store: doStore(stub, 'sim-presence'), retryAfter: 3, checkEvery: 2 }),
     ref: (account) => account,
   };
@@ -524,7 +551,12 @@ export function deps(env: CompanyEnv, live: boolean, c: Collector, ctx: { vh: st
 
 export type Outcome = { done: true; result: Record<string, unknown> } | { done: false; approval: ApprovalObject } | { done: false; presence: PresenceObject } | { done: false; error: string; status: number };
 
-type Account = { phone: string; presale?: { entered_at: string } };
+type Account = {
+  phone: string; presale?: { entered_at: string };
+  orders?: Array<{ order_id: string; tickets: number; at: string }>;
+  /** Couch Tour asked the account holder to approve an agent for purchases, once. */
+  agentAsked?: boolean;
+};
 async function getAccount(stub: Stub, account: string): Promise<Account> {
   return (await stub.kvGet<Account>(`acct:${account}`)) ?? { phone: DEFAULT_PHONE };
 }
@@ -537,8 +569,14 @@ export function normalizePhone(input: string): string | null {
   return null;
 }
 
+/**
+ * The one answer the agent gets for every refusal: not BotShield Verified, no match, declined. The
+ * reason goes in Couch Tour's own log (here, the trace), never to the agent.
+ */
+const DECLINE: Outcome = { done: false, error: 'declined', status: 403 };
+
 function approvalErrors(e: unknown, c: Collector): Outcome {
-  if (e instanceof NotLinkedError) { c.note('This account is not linked to BotShield, so the account holder can\'t be asked.'); return { done: false, error: 'This account is not linked to BotShield.', status: 403 }; }
+  if (e instanceof NotLinkedError || (e instanceof BotShieldError && e.code === 'not_linked')) { c.note('This account isn\'t BotShield Verified, so the account holder can\'t be asked. The agent gets the plain decline; the reason stays in Couch Tour\'s log.'); return DECLINE; }
   if (e instanceof StillPerformingError) return { done: false, error: 'in_progress', status: 503 };
   if (isTransient(e)) { c.note('BotShield is busy. Nothing was decided; answering 503 with Retry-After.'); return { done: false, error: 'unavailable', status: 503 }; }
   throw e;
@@ -556,7 +594,7 @@ export async function changePhone(env: CompanyEnv, d: Deps, c: Collector, input:
   const acct = await getAccount(stub, input.account);
   if (acct.phone === phone) return { done: true, result: { updated: false, phone_on_file: maskPhone(phone), note: 'That number is already on file.' } };
   c.ext = 'approval';
-  c.note(`Changing the phone number on file (${maskPhone(acct.phone)} → ${maskPhone(phone)}) can take over the account. Only the account holder may approve it.`);
+  c.note(`Changing the phone number on file (${maskPhone(acct.phone)} → ${maskPhone(phone)}). A change to the number on file needs the account holder's approval.`);
   try {
     const r = await d.phones.require<Record<string, unknown>>({
       account: d.ref(input.account),
@@ -578,7 +616,7 @@ export async function changePhone(env: CompanyEnv, d: Deps, c: Collector, input:
       await stub.kvPut(`acct:${input.account}`, { ...cur, phone }, 7 * 86400_000);
       return { updated: true, phone_on_file: maskPhone(phone), at: new Date().toISOString() };
     });
-    c.note(ranNow ? '✓ The signed answer checked out once: the account holder approved these exact terms. Changed the number, once (approval §7, §9).' : 'Already changed: same result as before, nothing done again (approval §7).');
+    c.note(ranNow ? '✓ The signed approval checked out once: the account holder approved these exact terms. Changed the number, once (approval §7, §9).' : 'Already changed: same result as before, nothing done again (approval §7).');
     return { done: true, result };
   } catch (e) { return approvalErrors(e, c); }
 }
@@ -588,7 +626,7 @@ export async function refund(env: CompanyEnv, d: Deps, c: Collector, input: { ac
   if (last4.length !== 4) return { done: false, error: 'to_card_last4 must be four digits', status: 400 };
   const total = ORDER.tickets * ORDER.each;
   c.ext = 'approval';
-  c.note(`A refund to a different card than the one paid with (${ORDER.originalCard}) is the classic takeover move. Only the account holder may approve it.`);
+  c.note(`A refund to card ending ${last4}, not the one paid with (${ORDER.originalCard}). A refund to a different card needs the account holder's approval.`);
   try {
     const r = await d.refunds.require<Record<string, unknown>>({
       account: d.ref(input.account),
@@ -609,30 +647,88 @@ export async function refund(env: CompanyEnv, d: Deps, c: Collector, input: { ac
       ranNow = true;
       return { refunded: true, order_id: ORDER.id, amount: `$${total.toFixed(2)}`, to_card_last4: last4, at: new Date().toISOString() };
     });
-    c.note(ranNow ? '✓ The signed answer checked out once. Refunded, once.' : 'Already refunded: same result, nothing done again.');
+    c.note(ranNow ? '✓ The signed approval checked out once. Refunded, once.' : 'Already refunded: same result, nothing done again.');
     return { done: true, result };
+  } catch (e) { return approvalErrors(e, c); }
+}
+
+/**
+ * Buying tickets, on the BotShield Signal API (approval §9a). The account holder approves an agent
+ * once; every order after that is a fresh check, and nobody is asked. On a no match Couch Tour
+ * decides with what it has: here it asks the account holder once, the first time an agent signed in
+ * to the account buys, and otherwise declines. `mayAsk` is false for an agent that isn't signed in
+ * with the account holder's own sign-in (the demo's "unknown agent").
+ */
+export async function placeOrder(env: CompanyEnv, d: Deps, c: Collector, input: { account: string; assistant: { clientId: string; userId: string | null }; quantity: number; approvalId: string | null; mayAsk: boolean }): Promise<Outcome> {
+  const stub = stubOf(env);
+  const tickets = Math.trunc(Number(input.quantity));
+  if (!(tickets >= 1 && tickets <= 8)) return { done: false, error: 'quantity must be 1 to 8', status: 400 };
+  c.ext = 'approval';
+  // The same approval repeated after the order went through: same result, no second order.
+  const doneKey = input.approvalId ? `order-apv:${input.account}:${input.approvalId}` : null;
+  if (doneKey) {
+    const prior = await stub.kvGet<Record<string, unknown>>(doneKey);
+    if (prior) { c.note('Already ordered for this approval: same result, nothing bought again.'); return { done: true, result: prior }; }
+  }
+  const orderRef = randomId('ord_', 10);
+  const gate = { account: d.ref(input.account), assistant: input.assistant, orderRef, approvalId: input.approvalId };
+  try {
+    let r = await d.orders.require(gate);
+    if (!r.allowed && 'match' in r) {
+      const acct = await getAccount(stub, input.account);
+      if (input.mayAsk && !acct.agentAsked && !input.approvalId) {
+        await stub.kvPut(`acct:${input.account}`, { ...acct, agentAsked: true } satisfies Account, 7 * 86400_000);
+        c.note('No approval on file for this agent. Couch Tour\'s policy: the first time an agent signed in to this account buys, ask the account holder, once.');
+        r = await d.orders.ask(gate);
+      } else {
+        c.note(input.mayAsk
+          ? '◆ BotShield Signal API: no match. Nobody was asked. Couch Tour already asked once on this account. Couch Tour decides: here, it declines.'
+          : '◆ No approval on file for this agent, so no match, and no call to make. Nobody was asked. An agent Couch Tour has never seen, not signed in by the account holder. Couch Tour decides: here, it declines.');
+        c.note('The agent gets the plain decline. BotShield gives no reason (approval §9a step 3), and Couch Tour sends none.');
+        return DECLINE;
+      }
+    }
+    if (r.allowed) {
+      const acct = await getAccount(stub, input.account);
+      const order = { order_id: orderRef, tickets, at: new Date().toISOString() };
+      await stub.kvPut(`acct:${input.account}`, { ...acct, orders: [...(acct.orders ?? []), order] } satisfies Account, 7 * 86400_000);
+      const result = { ordered: true, order_id: orderRef, show: ORDER.show, date: ORDER.date, tickets, total: `$${(tickets * ORDER.each).toFixed(2)}`, at: order.at };
+      if (doneKey) await stub.kvPut(doneKey, result, 86400_000);
+      if (input.approvalId) c.note('The account holder approved this agent, once. BotShield registered it, and the BotShield ID stays with Couch Tour, never with the agent (approval §9a step 2).');
+      c.note(`◆ BotShield Signal API: Match. Nobody was asked. checked_at ${r.checkedAt} · check_id ${r.checkId}. Ordered ${tickets} tickets.`);
+      return { done: true, result };
+    }
+    if ('refused' in r) { c.note('Couldn\'t read the agent\'s name from its Poppy metadata, so nobody was asked. The agent gets the plain decline.'); return DECLINE; }
+    if ('approval' in r) {
+      if (r.approval.state === 'requested') {
+        c.note(input.approvalId ? 'The account holder hasn\'t answered yet. Same approval object, state requested (approval §7).' : 'Did nothing. Asked the account holder once, in the BotShield app: "Let this agent buy for you" (approval §9a step 1). Answered 403 account_holder_approval_required.');
+        return { done: false, approval: r.approval };
+      }
+      c.note(`The account holder's answer: ${r.approval.state}. Nothing bought. The agent gets the plain decline.`);
+    }
+    return DECLINE;
   } catch (e) { return approvalErrors(e, c); }
 }
 
 export async function enterPresale(env: CompanyEnv, d: Deps, c: Collector, input: { account: string; session: { client: string; sid: string; user: string }; presenceId: string | null }): Promise<Outcome> {
   const stub = stubOf(env);
   c.ext = 'presence';
-  c.note('One entry per person. An agent can open any number of Sessions, so a Session proves nothing. Asking for a person.');
+  c.note('A presale entry needs the account holder, not only a Session: an agent can open any number of Sessions. BotShield confirms the account holder with their passkey.');
   try {
     const r = await d.presence.require({ session: input.session, presenceId: input.presenceId });
     if (!r.passed) {
       const p = r.presence;
-      c.note(p.state === 'requested' ? (input.presenceId ? 'Nobody has confirmed yet. Same presence object (presence §6).' : 'Did nothing. Opened a presence check at BotShield and answered 403 human_presence_required with its link (presence §4).') : p.state === 'refused' ? 'BotShield: this person was already counted at this gate. Refused. I never learn who it was (presence §6).' : `The check ended: ${p.state}.`);
+      c.note(p.state === 'requested' ? (input.presenceId ? 'Nobody has confirmed yet. Same presence object (presence §6).' : 'Did nothing. Opened a presence check at BotShield and answered 403 human_presence_required with its link (presence §4).') : p.state === 'refused' ? 'BotShield refused this entry at the gate. Not entered (presence §6).' : `The check ended: ${p.state}.`);
       return { done: false, presence: p };
     }
     const acct = await getAccount(stub, input.account);
     if (acct.presale) {
-      c.note('A person confirmed for this Session, and this account is already entered. Same answer, no second entry.');
+      c.note('Confirmed for this Session, and this account is already entered. Same answer, no second entry.');
       return { done: true, result: { entered: true, already_entered: true, show: ORDER.show, at: acct.presale.entered_at } };
     }
     const at = new Date().toISOString();
     await stub.kvPut(`acct:${input.account}`, { ...acct, presale: { entered_at: at } }, 7 * 86400_000);
-    c.note('✓ The signed answer checked out once: a person confirmed, counted once at this gate. Entered.');
+    c.note('✓ The signed answer checked out once: BotShield confirmed the account holder with their passkey. Entered.');
     return { done: true, result: { entered: true, show: ORDER.show, at } };
   } catch (e) {
     if (isTransient(e)) return { done: false, error: 'unavailable', status: 503 };
@@ -644,6 +740,7 @@ export function asHttp(o: Outcome): Response {
   if (o.done) return json(o.result);
   if ('approval' in o) { const r = approvalResponse(o.approval); return json(r.body, r.status, r.headers); }
   if ('presence' in o) { const r = presenceResponse(o.presence); return json(r.body, r.status, r.headers); }
+  if (o.error === 'declined') return json({ error: 'declined', error_description: 'Couch Tour can\'t do this for you.' }, 403);
   return json({ error: o.error }, o.status, o.status === 503 ? { 'Retry-After': '3' } : {});
 }
 
@@ -664,7 +761,7 @@ export async function companyApi(req: Request, env: CompanyEnv): Promise<Respons
     if (req.method === 'POST' && path === '/oauth/token') res = await token(req, env, c);
     else if (req.method === 'POST' && path === '/oauth/revoke') res = await revoke(req, env, c);
     else if (path.startsWith('/poppy/conversations')) res = await conversations(req, env, c);
-    else if (path === '/api/session' || path === '/api/shows/next' || path === '/api/account' || path === '/api/account/phone' || ((path === '/api/refunds' || path === '/api/presale/enter') && req.headers.has('Poppy-Session'))) res = await api(req, env, c, path);
+    else if (path === '/api/session' || path === '/api/shows/next' || path === '/api/account' || path === '/api/account/phone' || path === '/api/orders' || ((path === '/api/refunds' || path === '/api/presale/enter') && req.headers.has('Poppy-Session'))) res = await api(req, env, c, path);
   } finally {
     if (res) await saveTrace(env, req, c);
   }
@@ -687,7 +784,7 @@ async function api(req: Request, env: CompanyEnv, c: Collector, path: string): P
     const n = needScope(env, v, 'account:read', c);
     if (!n.ok) return n.res;
     const a = await getAccount(stubOf(env), n.access.account);
-    return json({ account: 'Demo fan', phone_on_file: maskPhone(a.phone), tickets: [{ order_id: ORDER.id, show: ORDER.show, date: ORDER.date, quantity: ORDER.tickets }], presale_entries: a.presale ? [{ show: ORDER.show, at: a.presale.entered_at }] : [] });
+    return json({ account: 'Demo fan', phone_on_file: maskPhone(a.phone), tickets: [{ order_id: ORDER.id, show: ORDER.show, date: ORDER.date, quantity: ORDER.tickets }, ...(a.orders ?? []).map((x) => ({ order_id: x.order_id, show: ORDER.show, date: ORDER.date, quantity: x.tickets }))], presale_entries: a.presale ? [{ show: ORDER.show, at: a.presale.entered_at }] : [] });
   }
   const ext = req.headers.get('Poppy-Extensions');
   const vh = (a: Access) => vhOf(a.account);
@@ -698,6 +795,15 @@ async function api(req: Request, env: CompanyEnv, c: Collector, path: string): P
     const body = (await req.json().catch(() => ({}))) as { phone_number?: string };
     const d = deps(env, live, c, { vh: vh(n.access), chat: chatOf(req) });
     return asHttp(await changePhone(env, d, c, { account: n.access.account, client: v.s.client, phone: String(body.phone_number ?? ''), approvalId: req.headers.get(APPROVAL_ID_HEADER) }));
+  }
+  if (path === '/api/orders' && req.method === 'POST') {
+    const n = needScope(env, v, 'account:write', c);
+    if (!n.ok) return n.res;
+    if (!declares(ext, APPROVAL_EXTENSION)) return json({ error: 'extension_required', extension: APPROVAL_EXTENSION }, 403);
+    const body = (await req.json().catch(() => ({}))) as { quantity?: number };
+    const d = deps(env, live, c, { vh: vh(n.access), chat: chatOf(req) });
+    // The agent is the Session's verified iss and sub (approval §9a step 3).
+    return asHttp(await placeOrder(env, d, c, { account: n.access.account, assistant: { clientId: v.s.client, userId: v.s.user }, quantity: Number(body.quantity ?? 2), approvalId: req.headers.get(APPROVAL_ID_HEADER), mayAsk: true }));
   }
   if (path === '/api/refunds' && req.method === 'POST') {
     const n = needScope(env, v, 'account:write', c);
@@ -789,10 +895,10 @@ async function conversations(req: Request, env: CompanyEnv, c: Collector): Promi
 function companyAgentReply(text: string): { text: string; why: string; data?: Record<string, unknown> } {
   const t = text.toLowerCase();
   if (/(next|upcoming|when).*(show|concert|gig)|show.*(next|when)|calendar/.test(t)) {
-    return { why: 'a question about shows. Answered from the calendar.', text: `Your next show is ${SHOWS[0].artist} at Red Rocks on Friday, December 5, 2026, at 7:30 PM Mountain time (doors 6:00 PM). The presale opens November 20 at 10 AM, one entry per person.`, data: { show: SHOWS[0] } };
+    return { why: 'a question about shows. Answered from the calendar.', text: `Your next show is ${SHOWS[0].artist} at Red Rocks on Friday, December 5, 2026, at 7:30 PM Mountain time (doors 6:00 PM). The presale opens November 20 at 10 AM.`, data: { show: SHOWS[0] } };
   }
   if (/refund/.test(t)) return { why: 'refund policy.', text: 'Refunds go back to the card you paid with, within 30 days of the show. A refund to a different card needs the account holder\'s yes in the BotShield app. Your agent can ask through our refunds API.' };
-  if (/presale/.test(t)) return { why: 'presale rules.', text: 'Presales are one entry per person. A person confirms in the BotShield app, and each person counts once, whichever agent or account they use.' };
+  if (/presale/.test(t)) return { why: 'presale rules.', text: 'Presale entries need the account holder to confirm with their passkey in the BotShield app.' };
   if (/phone|number|email|account|password/.test(t)) return { why: 'an account change. Chat can\'t change accounts.', text: 'I can\'t change account details in chat. Your agent can use our account API: a change like a new phone number needs the account holder\'s yes in the BotShield app.' };
   return { why: 'a general question.', text: 'I can help with shows, presales, tickets and refund policy. What would you like to know?' };
 }

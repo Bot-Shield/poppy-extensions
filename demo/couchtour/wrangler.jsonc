@@ -15,9 +15,10 @@
     "DEMO_HOST": "poppy-demo.couchtour.app",
     "DEMO_AGENT_NAME": "couchtour",
     "DEMO_REFUND_ACTION": "refund",
-    // The phone number change, live. It reuses the refund action key until its own action is placed
-    // in the Console; then set its key here.
-    "DEMO_PHONE_ACTION": "refund",
+    // The phone number change, live: its own Action key, so its approvals are recorded under it in the
+    // Console, not under the refund. Place an Action with this key in the Console before going live.
+    // (Ticket orders, live, use the package's Action key `assistant` and gates-api/assistants/*.)
+    "DEMO_PHONE_ACTION": "phone",
     "DEMO_PRESENCE_GATE": "poppy-demo-redrocks",
     "DEMO_LINK_GATE": "poppy-demo-link-2"
   },

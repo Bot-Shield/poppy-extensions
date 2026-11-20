@@ -134,6 +134,11 @@ a{color:inherit}
 .req .exp{font-size:11px;color:var(--faint);text-align:center}
 .done{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;text-align:center;font-size:13.5px}
 .done .big{font-size:28px}
+.agents{margin-top:auto;border-top:1px solid var(--line);padding-top:10px}
+.agents h5{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--muted)}
+.agents .agent{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}
+.agents .agent>div{flex:1;min-width:0}.agents .agent small{display:block;color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
+.agents .rm{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:8px;padding:5px 10px;font-size:12.5px}
 .pk{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px;color:var(--bs);font-weight:600}
 .pk .ring{width:46px;height:46px;border-radius:50%;border:3px solid var(--bs-line);border-top-color:var(--bs);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -243,6 +248,8 @@ a{color:inherit}
       <button type="button" data-act="signout">Sign out (revoke the refresh token)</button>
       <h6>Demo account</h6>
       <button type="button" data-act="reset">Reset the demo account</button>
+      <h6>BotShield Signal API</h6>
+      <button type="button" data-act="unknown">Try as an unknown agent</button>
       <h6>Checks</h6>
       <button type="button" data-act="validate">Poppy validator result</button>
     </div>
@@ -345,7 +352,14 @@ a{color:inherit}
   var vid = store.get('ct-vid');
   if (!vid) { vid = 'v_' + rand(16); store.set('ct-vid', vid); }
   document.cookie = 'ct_vid=' + vid + '; Path=/; Secure; SameSite=Lax; Max-Age=31536000';
-  var key = new URLSearchParams(location.search).get('key');
+  // The demo key: read once from the address, kept for this tab only, and taken out of the address
+  // so it isn't left in the browser's history or on a shared screen.
+  var key = null;
+  try {
+    key = new URLSearchParams(location.search).get('key');
+    if (key) { sessionStorage.setItem('ct-key', key); var clean = new URL(location.href); clean.searchParams.delete('key'); history.replaceState(null, '', clean.toString()); }
+    else key = sessionStorage.getItem('ct-key');
+  } catch (e) {}
 
   var S = { chat: null, after: 0, busy: 0, pending: null, mode: key ? 'live' : 'simulated', showReason: false, showRaw: false, groups: 0, lastRow: null, rows: [], polling: false, presaleDone: false };
 
@@ -362,6 +376,7 @@ a{color:inherit}
       if (a === 'signout' && S.chat) api('/agent/chat/' + S.chat + '/signout', {}).then(pump);
       if (a === 'reset') fetch('/agent/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vid: vid }) }).then(function () { S.presaleDone = false; newSession(); });
       if (a === 'validate') showValidator();
+      if (a === 'unknown') { if (S.chat) api('/agent/chat/' + S.chat + '/unknown-agent', {}).then(pump); else sys('Start a session first.'); }
     };
   });
 
@@ -385,9 +400,11 @@ a{color:inherit}
   setMode(S.mode);
 
   // Suggestions
+  // The presale is still there (type it, or the MCP tool); it no longer has a chip.
   var CHIPS = [
+    { label: 'Buy two tickets to Red Rocks', text: 'Buy two tickets to Rising Wave at Red Rocks', bs: true },
+    { label: 'Buy two more', text: 'Buy two more tickets to Red Rocks', bs: true },
     { label: 'Change the phone number on my account', text: 'Change the phone number on my account to 303 555 0141', bs: true },
-    { label: 'Enter me in the Red Rocks presale', text: 'Enter me in the Red Rocks presale', bs: true },
     { label: "When's my next show?", text: "When's my next show?" },
     { label: 'Refund my Red Rocks tickets to my card ending 4417', text: 'Refund my Red Rocks tickets to my card ending 4417', bs: true },
     { label: "What's Couch Tour's refund policy?", text: "What's Couch Tour's refund policy?" },
@@ -431,7 +448,7 @@ a{color:inherit}
     if (S.mode !== 'live') $('bsapp').innerHTML = idleBs();
     return api('/agent/chat/' + S.chat + '/start', { vid: vid, key: key || undefined }).then(function (j) {
       if (j.error === 'rate_limited') sys(j.error_description);
-      else if (j.error === 'demo_key_invalid') { sys('That demo key isn\'t right. Running simulated.'); key = null; setMode('simulated'); return newSession(); }
+      else if (j.error === 'demo_key_invalid') { sys('That demo key isn\'t right. Running simulated.'); key = null; try { sessionStorage.removeItem('ct-key'); } catch (e) {} setMode('simulated'); return newSession(); }
       else if (j.error) sys('The session didn\'t start. Try again.');
       if (j.mode) setMode(j.mode);
       return j;
@@ -652,6 +669,22 @@ a{color:inherit}
 
   // The simulated BotShield app
   function idleBs() { return '<div class="bsidle"><div class="big"><img src="/img/botshield-shield.svg" width="44" height="48" alt=""></div>Nothing to approve.<br>When a company asks the account holder for a yes, it appears here.</div>'; }
+  // The agents the account holder approved to buy, each with Remove (approval §9a step 4).
+  function agentsBs(list) {
+    if (!list || !list.length) return '';
+    return '<div class="agents"><h5>Agents that can buy for you</h5>' + list.map(function (g) {
+      return '<div class="agent" data-pw="' + esc(g.pairwise_id) + '"><div><b>' + esc(g.name) + '</b><small>' + esc(g.company) + ' · from ' + esc(g.from) + '</small></div><button type="button" class="rm" data-testid="bs-remove">Remove</button></div>';
+    }).join('') + '</div>';
+  }
+  function wireAgents() {
+    $('bsapp').querySelectorAll('.agent .rm').forEach(function (b) {
+      b.onclick = function () {
+        var pw = b.closest('.agent').getAttribute('data-pw');
+        b.disabled = true;
+        fetch('/sim/phone/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vid: vid, pairwise_id: pw, chat: S.chat }) }).then(function () { shown.ids = null; phone(); pump(); });
+      };
+    });
+  }
   var shown = {};
   var answering = false;
   function phone() {
@@ -659,17 +692,19 @@ a{color:inherit}
     fetch('/sim/phone?vid=' + encodeURIComponent(vid)).then(function (r) { return r.json(); }).then(function (j) {
       if (answering || S.mode === 'live') return;
       var items = j.items || [];
-      var ids = items.map(function (i) { return i.request_id; }).join(',');
+      var agents = j.agents || [];
+      var ids = items.map(function (i) { return i.request_id; }).join(',') + '|' + agents.map(function (g) { return g.pairwise_id; }).join(',');
       if (ids === shown.ids) return;
       shown.ids = ids;
-      if (!items.length) { if (!shown.result) $('bsapp').innerHTML = idleBs(); return; }
+      if (!items.length) { if (!shown.result) { $('bsapp').innerHTML = idleBs() + agentsBs(agents); wireAgents(); } else shown.ids = null; return; }
       shown.result = null;
       $('bsapp').innerHTML = items.map(function (i) {
         return '<div class="req" data-id="' + esc(i.request_id) + '"><div class="from"><span class="lockup mkonly"><img class="mk" src="/img/couchtour-mark.svg" width="33" height="23" alt="" style="height:13px"></span>Couch Tour (demo)</div>' +
           '<h4>' + esc(i.title) + '</h4><dl>' + (i.details || []).map(function (d) { return '<dt>' + esc(d.label) + '</dt><dd>' + esc(d.value) + '</dd>'; }).join('') + '</dl>' +
           '<button class="yes" type="button" data-a="confirm" data-testid="bs-confirm">Confirm with passkey</button><button class="no" type="button" data-a="deny">This isn\'t me</button>' +
-          '<div class="exp">' + (i.kind === 'approval' ? 'Only the account holder can approve this.' : 'One entry per person.') + '</div></div>';
-      }).join('');
+          '<div class="exp">' + (i.kind === 'approval' ? 'Only the account holder can approve this.' : 'Only the account holder can confirm this.') + '</div></div>';
+      }).join('') + agentsBs(agents);
+      wireAgents();
       $('bsapp').querySelectorAll('.req button').forEach(function (b) {
         b.onclick = function () {
           var id = b.closest('.req').getAttribute('data-id');
@@ -683,7 +718,7 @@ a{color:inherit}
               var o = j.outcome;
               var good = o === 'approved' || o === 'passed';
               shown.result = true;
-              $('bsapp').innerHTML = '<div class="done"><div class="big">' + (good ? '✓' : '✕') + '</div>' + (o === 'approved' ? 'Approved with your passkey. Couch Tour gets a signed answer for these exact terms.' : o === 'passed' ? 'Confirmed with your passkey. Counted once for this presale.' : o === 'already_counted' ? 'You\'ve already been counted for this presale. One entry per person.' : 'Declined. Nothing happens.') + '</div>';
+              $('bsapp').innerHTML = '<div class="done"><div class="big">' + (good ? '✓' : '✕') + '</div>' + (o === 'approved' ? 'Approved with your passkey. Couch Tour gets a signed approval for these exact terms.' : o === 'passed' ? 'Confirmed with your passkey. Couch Tour gets a signed answer.' : o === 'already_counted' ? 'Refused at the gate. Not entered.' : 'Declined. Nothing happens.') + '</div>';
               pump();
               if (S.pending) schedulePoll(400);
               setTimeout(function () { shown.result = null; }, 6000);
@@ -703,7 +738,7 @@ a{color:inherit}
       var c = r.counts || {};
       var ok = r.outcome === 'valid' && !c.error;
       $('validBtn').className = 'valid' + (ok ? '' : ' bad');
-      $('validText').textContent = ok ? 'Poppy 1.0 compliant' : 'Poppy 1.0 validator: ' + (r.outcome || 'no answer');
+      $('validText').textContent = ok ? 'Passes the Poppy validator' : 'Poppy 1.0 validator: ' + (r.outcome || 'no answer');
       $('validBtn').title = 'Validator: ' + (r.outcome || '?') + ' · checked against ' + (r.checkedAgainst || '?') + ' · specification revision ' + (r.specificationRevision || '?') + ' · ' + (c.error || 0) + ' errors, ' + (c.warning || 0) + ' warnings, ' + (c.info || 0) + ' info. Click for details.';
     }).catch(function () { $('validText').textContent = 'Poppy 1.0 validator'; });
   }
