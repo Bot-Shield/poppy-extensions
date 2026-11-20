@@ -124,6 +124,8 @@ export class AssistantGate {
   }
 
   private async start(account: string, clientId: string, userId: string | null, lookup: string): Promise<AssistantRecord | { allowed: false; refused: 'assistant_unknown' }> {
+    // BotShield refuses to register a client_id it won't read, so nobody is asked about one.
+    if (!assistantClientIdUrl(clientId)) return { allowed: false, refused: 'assistant_unknown' };
     const name = await (this.opts.readName ?? readAssistantName)(clientId);
     if (!name) return { allowed: false, refused: 'assistant_unknown' };
     const id = newId('apv');
@@ -191,14 +193,103 @@ function toObject(rec: AssistantRecord, retryAfter: number): ApprovalObject {
   };
 }
 
-/** The assistant's client_name from its Poppy metadata: HTTPS, no redirects, client_id must match. */
-export async function readAssistantName(clientId: string): Promise<string | null> {
+// ── The assistant's name, from its own metadata ─────────────────────────────────────────────────
+//
+// These are the rules BotShield applies when the Company registers the approval
+// (`gates-api/assistants/register`). The gate applies the same ones before it asks anybody, so the
+// account holder is never asked to approve an assistant that BotShield will then refuse.
+//
+// - client_id: at most 2048 characters, no surrounding whitespace, an HTTPS URL with no user,
+//   password or fragment;
+// - its host is a DNS name: not an IP literal, not localhost, *.localhost, *.local or *.internal;
+// - every address the name resolves to is public (where this runtime can resolve names);
+// - the metadata is fetched without following redirects, within 3 seconds, answers 200, is at most
+//   64 KiB, and its client_id is the URL it came from;
+// - client_name, with control characters removed and trimmed, is 1 to 60 characters.
+
+const MAX_CLIENT_ID = 2048;
+const MAX_BYTES = 64 * 1024;
+const TIMEOUT_MS = 3000;
+
+function ipVersion(s: string): 0 | 4 | 6 {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) return s.split('.').every((o) => Number(o) <= 255) ? 4 : 0;
+  if (s.includes(':') && /^[0-9a-f:.]+$/i.test(s)) return 6;
+  return 0;
+}
+
+/** Whether an IP address is public: not private, loopback, link-local, carrier-grade NAT, multicast or reserved. */
+export function isPublicAddress(addr: string): boolean {
+  const v = ipVersion(addr);
+  if (v === 4) {
+    const [a, b] = addr.split('.').map(Number);
+    if (a === 10 || a === 127 || a === 0 || a >= 224) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false; // carrier-grade NAT
+    return true;
+  }
+  if (v === 6) {
+    const s = addr.toLowerCase();
+    if (s === '::1' || s === '::') return false;
+    if (s.startsWith('fc') || s.startsWith('fd')) return false; // unique local
+    if (s.startsWith('fe8') || s.startsWith('fe9') || s.startsWith('fea') || s.startsWith('feb')) return false; // link local
+    if (s.startsWith('::ffff:')) return isPublicAddress(s.slice(7));
+    return true;
+  }
+  return false;
+}
+
+/** The client_id as a URL when BotShield would read it, else null. No network. */
+export function assistantClientIdUrl(clientId: string): URL | null {
+  if (typeof clientId !== 'string' || !clientId || clientId.length > MAX_CLIENT_ID || clientId !== clientId.trim()) return null;
+  let url: URL;
   try {
-    const url = new URL(clientId);
-    if (url.protocol !== 'https:') return null;
-    const res = await fetch(url.href, { redirect: 'manual', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(3000) });
+    url = new URL(clientId);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash) return null;
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (!host || ipVersion(host) || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return null;
+  return url;
+}
+
+export type NameResolver = (host: string) => Promise<string[]>;
+
+/**
+ * Node's resolver, loaded only when it exists. On a runtime without it (Cloudflare Workers without
+ * Node compatibility), names are not resolved here; the fetch goes out from the platform's network.
+ */
+async function defaultResolver(): Promise<NameResolver | null> {
+  try {
+    const spec = 'node:dns/promises';
+    const dns = (await import(/* @vite-ignore */ spec)) as { lookup: (h: string, o: { all: true }) => Promise<{ address: string }[]> };
+    return async (host) => (await dns.lookup(host, { all: true })).map((r) => r.address);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The assistant's client_name from its Poppy metadata, by the rules above, or null when it can't be
+ * read safely. Never throws. `fetch` and `resolve` are injectable for tests.
+ */
+export async function readAssistantName(clientId: string, deps: { fetch?: typeof fetch; resolve?: NameResolver } = {}): Promise<string | null> {
+  const url = assistantClientIdUrl(clientId);
+  if (!url) return null;
+  try {
+    const resolve = deps.resolve ?? (await defaultResolver());
+    if (resolve) {
+      const addrs = await resolve(url.hostname);
+      if (!addrs.length || !addrs.every(isPublicAddress)) return null;
+    }
+    const doFetch = deps.fetch ?? ((i: string, n: RequestInit) => fetch(i, n));
+    const res = await doFetch(url.href, { redirect: 'manual', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (res.status !== 200) return null;
-    const doc = (await res.json()) as { client_id?: unknown; client_name?: unknown };
+    const text = await res.text();
+    if (text.length > MAX_BYTES) return null;
+    const doc = JSON.parse(text) as { client_id?: unknown; client_name?: unknown };
     if (doc.client_id !== url.href && doc.client_id !== clientId) return null;
     const name = typeof doc.client_name === 'string' ? doc.client_name.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
     return name && name.length <= 60 ? name : null;
