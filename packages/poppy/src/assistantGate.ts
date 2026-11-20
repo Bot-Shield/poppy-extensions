@@ -9,6 +9,10 @@
  *   if (!r.allowed) return approvalResponse(r.approval);   // 403: the account holder is asked
  *   // r.checkedAt, r.checkId: this order's fresh answer
  *
+ * With `onUnapproved: 'signal'`, `require()` asks nobody: an assistant that isn't approved (never
+ * seen, removed, or declined) comes back as `{ allowed: false, match: false }`, and the Company
+ * decides what to do with it. `ask()` starts the approval when the Company chooses to.
+ *
  * The Company places an Action with the key `assistant` in the Console. BotShield's pairwise ID
  * stays with the Company (the store); it is never sent to the assistant.
  */
@@ -45,11 +49,22 @@ export interface AssistantGateOptions {
   checkEvery?: number;
   /** Reads the assistant's client_name from its Poppy metadata. Injectable for tests. */
   readName?: (clientId: string) => Promise<string | null>;
+  /**
+   * What `require()` does when the assistant isn't approved: never seen, no match at the check, or
+   * declined. `'ask'` (the default) asks the account holder through BotShield and returns the
+   * approval object. `'signal'` asks nobody and returns `{ allowed: false, match: false }`; the
+   * Company then declines, uses its own checks, or calls `ask()`. An approval already started is
+   * followed in both modes.
+   */
+  onUnapproved?: 'ask' | 'signal';
 }
+
+type GateInput = { account: string; assistant: { clientId: string; userId?: string | null }; orderRef: string; approvalId?: string | null };
 
 export type GateResult =
   | { allowed: true; checkedAt: string; checkId: string }
   | { allowed: false; approval: ApprovalObject }
+  | { allowed: false; match: false }
   | { allowed: false; refused: 'assistant_unknown' };
 
 export class AssistantGate {
@@ -71,7 +86,20 @@ export class AssistantGate {
    * Call at checkout, after your Poppy Session checks. `assistant.clientId` is the Session's verified
    * `iss`; `assistant.userId` its `sub`. Without Poppy, pass the clientId you know and no userId.
    */
-  async require(input: { account: string; assistant: { clientId: string; userId?: string | null }; orderRef: string; approvalId?: string | null }): Promise<GateResult> {
+  async require(input: GateInput): Promise<GateResult> {
+    return this.run(input, this.opts.onUnapproved ?? 'ask');
+  }
+
+  /**
+   * Start the account holder's approval for this assistant, when the Company chooses to (for
+   * example after `require()` in `'signal'` mode). An approved assistant that still matches is
+   * allowed without asking; an approval already waiting is returned as it stands.
+   */
+  async ask(input: GateInput): Promise<GateResult> {
+    return this.run(input, 'ask');
+  }
+
+  private async run(input: GateInput, mode: 'ask' | 'signal'): Promise<GateResult> {
     const { clientId } = input.assistant;
     const userId = input.assistant.userId ?? null;
     const lookup = `${input.account}\n${clientId}\n${userId ?? ''}`;
@@ -81,12 +109,14 @@ export class AssistantGate {
     if (rec?.pairwiseId) {
       const c = await this.opts.api.assistantCheck({ partnerUserRef: input.account, pairwiseId: rec.pairwiseId, clientId, assistantUserId: userId, orderRef: input.orderRef });
       if (c.match) return { allowed: true, checkedAt: c.checked_at, checkId: c.check_id };
+      if (mode === 'signal') return { allowed: false, match: false };
       rec = null; // removed by the person, or replaced: ask again
     }
     if (rec && rec.state === 'requested') rec = await this.refresh(rec, input.account, clientId, userId);
-    if (rec?.pairwiseId) return this.require({ ...input, approvalId: null });
+    if (rec?.pairwiseId) return this.run({ ...input, approvalId: null }, mode);
     if (rec && (rec.state === 'declined' || rec.state === 'expired') && input.approvalId) return { allowed: false, approval: toObject(rec, this.retryAfter) };
     if (!rec || rec.state === 'declined' || rec.state === 'expired') {
+      if (mode === 'signal') return { allowed: false, match: false };
       const started = await this.start(input.account, clientId, userId, lookup);
       return 'refused' in started ? started : { allowed: false, approval: toObject(started, this.retryAfter) };
     }
