@@ -94,7 +94,7 @@ npm install @botshield/poppy
 
 `AssistantGate` asks the account holder once whether an agent may order for them, then checks at
 every order. The account holder can remove the agent in the BotShield app at any time, and the next
-check is no match.
+check answers false.
 
 ```ts
 import { BotShieldApi, BotShieldError, AssistantGate, approvalResponse } from '@botshield/poppy';
