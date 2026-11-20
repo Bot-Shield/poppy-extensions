@@ -7,7 +7,11 @@
  *
  * and the page at `/` shows the traffic between them, Atlas-style.
  *
- * Routes kept from the first demo: POST /mcp (needs the demo key), POST /api/refunds and
+ * /mcp is a remote MCP server for ChatGPT and Claude connectors: OAuth 2.1 at this Company's own
+ * sign-in (MCP authorization), and buying tickets on the BotShield Signal API in 'ask' mode. With the
+ * demo key instead of a token it keeps the first demo's tools.
+ *
+ * Routes kept from the first demo: POST /api/refunds and
  * POST /api/presale/enter without a Poppy-Session (needs the demo key: live), GET /api/trace,
  * /api/admin/link*, POST /api/reset.
  *
@@ -19,8 +23,8 @@ import { demoPage } from './page.ts';
 import { setLocalHandler } from './net.ts';
 import { Collector } from './trace.ts';
 import {
-  accountFor, authServerMetadata, authorize, asHttp, changePhone, companyApi, deps, enterPresale, json, liveAllowed, openApi, placeOrder, poppyJson, protectedResource, refund, stubOf, visitorHash,
-  type Outcome,
+  accountFor, authServerMetadata, authorize, asHttp, bearerAccess, changePhone, companyApi, connectorAccount, connectorOrder, deps, enterPresale, json, liveAllowed, mcpProtectedResource, mcpResourceMetadataUrl, openApi, placeOrder, poppyJson, protectedResource, refund, showsList, stubOf, visitorHash,
+  CONNECTOR_SCOPES, PRESENTER_ACCOUNT, type Access, type Outcome,
 } from './company.ts';
 import { agentJwks, clientMetadata, events, loadCtx, poll, resumeAfterSignIn, signInCallback, signInWithPhone, signOut, startChat, userMessage, validChatId, type AgentEnv } from './agent.ts';
 import { phoneAgents, phoneAnswer, phoneInbox, phoneRemove, removeAllAgents } from './simBotShield.ts';
@@ -48,6 +52,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
   // Discovery (spec 3, 3.2, 7) and the agent's own documents (spec 4.1).
   if (GET && path === '/.well-known/poppy.json') return pub(poppyJson(env));
   if (GET && path === '/.well-known/oauth-protected-resource') return pub(protectedResource(env));
+  if (GET && path === '/.well-known/oauth-protected-resource/mcp') return pub(mcpProtectedResource(env));
   if (GET && path === '/.well-known/oauth-authorization-server') return pub(authServerMetadata(env));
   if (GET && path === '/openapi.json') return pub(openApi(env));
   if (GET && path === '/agent/client.json') return pub(clientMetadata(env));
@@ -120,8 +125,10 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return json(body);
   }
 
+  if (path === '/mcp') return withCors(await mcpRoute(req, env));
+
   // ── Kept from the first demo ─────────────────────────────────────────────────────────────────
-  const legacy = path === '/mcp' || path === '/api/refunds' || path === '/api/presale/enter' || path === '/api/trace';
+  const legacy = path === '/api/refunds' || path === '/api/presale/enter' || path === '/api/trace';
   if (legacy && !liveAllowed(req, env)) {
     return json({ error: 'demo_key_required', error_description: 'Live calls reach the presenter\'s phone. Try the simulated demo at /.' }, 401);
   }
@@ -139,7 +146,6 @@ async function handle(req: Request, env: Env): Promise<Response> {
     await legacyTrace(env, 'presale', c, o);
     return asHttp(o);
   }
-  if (path === '/mcp') return mcp(req, env);
   if (GET && path === '/api/trace') return json(await stubOf(env).traces());
   if (path.startsWith('/api/admin/link')) {
     if (!env.DEMO_ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.DEMO_ADMIN_TOKEN}`) return json({ error: 'forbidden' }, 403);
@@ -265,7 +271,45 @@ const handler = {
 };
 export default handler;
 
-// ── MCP (Streamable HTTP, JSON responses; protocol 2025-06-18). Needs the demo key: live. ─────────
+// ── MCP (Streamable HTTP, JSON responses, legacy-era protocol with initialize) ──────────────────────
+//
+// Two ways in:
+// - a connector (ChatGPT, Claude): `Authorization: Bearer` with an access token from this Company's
+//   own sign-in (MCP authorization: RFC 9728 metadata, OAuth 2.1 with PKCE, Client ID Metadata
+//   Documents). Without one it answers 401 with the resource metadata pointer, which starts sign-in.
+// - the first demo: `X-Demo-Key`, with its refund, presale and phone tools.
+
+/** Protocol versions answered. 2026-07-28 and later (no initialize) get a 400 that isn't a modern error, so dual-era clients fall back to initialize. */
+const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, Mcp-Session-Id, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-Demo-Key',
+  'Access-Control-Expose-Headers': 'WWW-Authenticate, Mcp-Session-Id',
+};
+function withCors(res: Response): Response {
+  const r = new Response(res.body, res);
+  for (const [k, v] of Object.entries(CORS)) r.headers.set(k, v);
+  return r;
+}
+
+function challenge(env: Env, status: 401 | 403, error?: 'invalid_token' | 'insufficient_scope', scope = CONNECTOR_SCOPES.join(' '), description?: string): Response {
+  const parts = [`resource_metadata="${mcpResourceMetadataUrl(env)}"`, `scope="${scope}"`];
+  if (error) parts.unshift(`error="${error}"`);
+  if (description) parts.push(`error_description="${description.replace(/"/g, "'")}"`);
+  return json({ error: error ?? 'unauthorized', error_description: description ?? 'Sign in to Couch Tour to use this connector.' }, status, { 'WWW-Authenticate': `Bearer ${parts.join(', ')}` });
+}
+
+async function mcpRoute(req: Request, env: Env): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
+  if (liveAllowed(req, env)) return mcp(req, env, null);
+  const { token, access } = await bearerAccess(env, req);
+  if (!token) return challenge(env, 401);
+  if (!access) return challenge(env, 401, 'invalid_token', undefined, 'The access token is expired, revoked or unknown.');
+  if (access.account !== PRESENTER_ACCOUNT) return challenge(env, 401, 'invalid_token', undefined, 'This token is for the simulated web demo. Sign in again.');
+  return mcp(req, env, access);
+}
 
 const TOOLS = [
   {
@@ -288,24 +332,72 @@ const TOOLS = [
   },
 ];
 
-async function mcp(req: Request, env: Env): Promise<Response> {
+/** The connector's tools. */
+const CONNECTOR_TOOLS = [
+  {
+    name: 'find_shows',
+    title: 'Find shows',
+    description: 'Upcoming Couch Tour shows: artist, venue, date and time, doors, and whether tickets are on sale. With no query, the whole calendar, soonest first; the first one is the next show.',
+    inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Optional: an artist, venue or city to search for.' } } },
+    annotations: { title: 'Find shows', readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'buy_tickets',
+    title: 'Buy tickets',
+    description:
+      'Buy tickets to Rising Wave Live · Red Rocks (Fri, Dec 5, 2026), $48 each, on the signed-in Couch Tour account. ' +
+      'Couch Tour checks each purchase with BotShield. The first purchase by this assistant needs the account holder\'s approval in the BotShield app on their phone: ' +
+      'if the result says so, tell the user to approve there, then call this tool again with the same quantity and the approval_id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        quantity: { type: 'integer', minimum: 1, maximum: 8, description: 'How many tickets, 1 to 8.' },
+        approval_id: { type: 'string', description: 'From an earlier result, when repeating the purchase after the account holder approved.' },
+      },
+      required: ['quantity'],
+    },
+    annotations: { title: 'Buy tickets', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'get_account',
+    title: 'Your Couch Tour account',
+    description: 'The signed-in Couch Tour account: its tickets, and the phone number on file (last two digits).',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { title: 'Your Couch Tour account', readOnlyHint: true, openWorldHint: false },
+  },
+];
+
+const textResult = (data: Record<string, unknown>, text = JSON.stringify(data)) => ({ content: [{ type: 'text', text }], structuredContent: data });
+
+async function mcp(req: Request, env: Env, access: Access | null): Promise<Response> {
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   const msg = (await req.json().catch(() => null)) as { id?: unknown; method?: string; params?: any } | null;
   if (!msg || typeof msg.method !== 'string') return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, 400);
   if (msg.id === undefined) return new Response(null, { status: 202 });
   const reply = (result: unknown) => json({ jsonrpc: '2.0', id: msg.id, result });
+  const version = req.headers.get('MCP-Protocol-Version');
+  if (msg.method !== 'initialize' && version && !MCP_VERSIONS.includes(version)) {
+    return json({ jsonrpc: '2.0', id: msg.id, error: { code: -32600, message: `This server speaks MCP ${MCP_VERSIONS.join(', ')}. Start with initialize.` } }, 400);
+  }
   const mcpSession = req.headers.get('Mcp-Session-Id') ?? 'mcp';
   switch (msg.method) {
-    case 'initialize':
-      return json({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'couchtour-poppy-demo', version: '0.2.0' } } }, 200, { 'Mcp-Session-Id': crypto.randomUUID() });
+    case 'initialize': {
+      const asked = msg.params?.protocolVersion;
+      const protocolVersion = MCP_VERSIONS.includes(asked) ? asked : MCP_VERSIONS[0];
+      const instructions = access
+        ? 'Couch Tour (a demo): find shows, see the signed-in account, and buy tickets. Couch Tour checks each purchase with BotShield; the first one by you needs the account holder\'s approval in the BotShield app.'
+        : undefined;
+      return json({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'couchtour-poppy-demo', title: 'Couch Tour (demo)', version: '0.3.0' }, ...(instructions ? { instructions } : {}) } }, 200, { 'Mcp-Session-Id': crypto.randomUUID() });
+    }
     case 'ping':
       return reply({});
     case 'tools/list':
-      return reply({ tools: TOOLS });
+      return reply({ tools: access ? CONNECTOR_TOOLS : TOOLS });
     case 'tools/call': {
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
       const meta = msg.params?._meta ?? {};
+      if (access) return connectorCall(env, access, msg.id, name, args, meta);
       const c = new Collector();
       const d = deps(env, true, c, { vh: 'mcp' });
       const client = 'mcp-client';
@@ -317,6 +409,49 @@ async function mcp(req: Request, env: Env): Promise<Response> {
     default:
       return json({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } });
   }
+}
+
+const TOOL_SCOPE: Record<string, string | null> = { find_shows: null, buy_tickets: 'account:write', get_account: 'account:read' };
+
+async function connectorCall(env: Env, access: Access, id: unknown, name: unknown, args: any, meta: any): Promise<Response> {
+  const reply = (result: unknown) => json({ jsonrpc: '2.0', id, result });
+  if (typeof name !== 'string' || !(name in TOOL_SCOPE)) return json({ jsonrpc: '2.0', id, error: { code: -32602, message: `Unknown tool: ${String(name)}` } });
+  const need = TOOL_SCOPE[name];
+  // account:write (buying, changing the account) includes reading it.
+  const has = (x: string) => access.scope.includes(x) || (x === 'account:read' && access.scope.includes('account:write'));
+  if (need && !has(need)) return challenge(env, 403, 'insufficient_scope', [...new Set([...access.scope, need])].join(' '), `This needs ${need}. Reconnect Couch Tour and allow it.`);
+
+  if (name === 'find_shows') {
+    const q = String(args.query ?? '').trim().toLowerCase();
+    const all = showsList().shows;
+    const shows = q ? all.filter((s) => `${s.artist} ${s.venue}`.toLowerCase().includes(q)) : all;
+    return reply(textResult({ shows, next_show: all[0] }));
+  }
+  if (name === 'get_account') return reply(textResult(await connectorAccount(env, access.account)));
+
+  // buy_tickets
+  const c = new Collector();
+  const approvalId = typeof args.approval_id === 'string' ? args.approval_id : typeof meta[APPROVAL_ID_META] === 'string' ? meta[APPROVAL_ID_META] : null;
+  const o = await connectorOrder(env, c, { account: access.account, clientId: access.client, quantity: Number(args.quantity ?? 0), approvalId });
+  await legacyTrace(env, 'connector', c, o);
+  return reply(connectorResult(o));
+}
+
+function connectorResult(o: Outcome) {
+  if (o.done) return textResult(o.result, `Ordered. ${JSON.stringify(o.result)}`);
+  if ('approval' in o) {
+    const r = approvalToolResult(o.approval);
+    if (o.approval.state === 'requested') {
+      const what = o.approval.summary.replace(/[*_`]/g, '').replace(/[.\s]+$/, '');
+      r.content[0].text = `Not done yet. Couch Tour asked the account holder to approve "${what}" in the BotShield app on their phone. Tell the user to open the BotShield app and approve, then call buy_tickets again with the same quantity and approval_id ${o.approval.approval_id}.`;
+    }
+    return r;
+  }
+  if ('presence' in o) return presenceToolResult(o.presence);
+  if (o.error === 'not_verified') return { isError: true, content: [{ type: 'text', text: 'Not done. This Couch Tour account isn\'t BotShield Verified with Couch Tour yet, so Couch Tour can\'t ask the account holder to approve purchases. Verify the account on Couch Tour first, then try again.' }] };
+  if (o.error === 'declined') return { isError: true, content: [{ type: 'text', text: 'Not done. Couch Tour can\'t complete this order.' }] };
+  if (o.error === 'unavailable' || o.error === 'in_progress') return { isError: true, content: [{ type: 'text', text: 'Not done. Couch Tour is busy for a moment; try again in a few seconds.' }] };
+  return { isError: true, content: [{ type: 'text', text: `Not done: ${o.error}` }] };
 }
 
 function toolResult(o: Outcome) {

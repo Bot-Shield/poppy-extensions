@@ -1,6 +1,7 @@
 /**
  * The little JOSE the demo needs, on WebCrypto: ES256 signing and verifying, PS384 verifying (Poppy
- * requires Companies to accept both, spec 4.1 and 5.2), JWK thumbprints (RFC 7638), and base64url.
+ * requires Companies to accept both, spec 4.1 and 5.2), RS256 verifying (ChatGPT's client assertions),
+ * JWK thumbprints (RFC 7638), and base64url.
  */
 
 export type Jwk = JsonWebKey & { kid?: string };
@@ -69,7 +70,7 @@ export async function signEs256(header: Record<string, unknown>, payload: Record
   return `${input}.${b64url(sig)}`;
 }
 
-/** Verifies an ES256 or PS384 signature with a public JWK. */
+/** Verifies an ES256, PS384 or RS256 signature with a public JWK. */
 export async function verifySig(parts: JwtParts, jwk: Jwk): Promise<boolean> {
   const alg = parts.header.alg;
   const data = enc.encode(parts.signingInput);
@@ -81,6 +82,10 @@ export async function verifySig(parts: JwtParts, jwk: Jwk): Promise<boolean> {
     if (alg === 'PS384' && jwk.kty === 'RSA') {
       const key = await crypto.subtle.importKey('jwk', { kty: 'RSA', n: jwk.n, e: jwk.e }, { name: 'RSA-PSS', hash: 'SHA-384' }, false, ['verify']);
       return crypto.subtle.verify({ name: 'RSA-PSS', saltLength: 48 }, key, parts.signature, data);
+    }
+    if (alg === 'RS256' && jwk.kty === 'RSA') {
+      const key = await crypto.subtle.importKey('jwk', { kty: 'RSA', n: jwk.n, e: jwk.e }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+      return crypto.subtle.verify({ name: 'RSASSA-PKCS1-v1_5' }, key, parts.signature, data);
     }
   } catch {
     return false;

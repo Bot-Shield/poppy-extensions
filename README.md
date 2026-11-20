@@ -140,6 +140,42 @@ the errors to handle, and how to run the reference Company and agent. BotShield'
 documented at [docs.botshield.ai](https://docs.botshield.ai/poppy/overview), and the model behind this is
 at [botshield.ai/agent-identity](https://botshield.ai/agent-identity).
 
+## Use it from ChatGPT or Claude
+
+The Couch Tour demo ([demo/couchtour](demo/couchtour)) is also a remote MCP server, so ChatGPT and
+Claude can use it as a connector:
+
+```
+https://poppy-demo.couchtour.app/mcp
+```
+
+The person signs in on Couch Tour's own sign-in page, never BotShield's. The connector can find
+shows, read the account, and buy tickets. Couch Tour checks each purchase with the BotShield Signal
+API. The first time an assistant buys, the account holder gets "Let ChatGPT buy for you" (or "Let
+Claude buy for you") in the BotShield app. Once they approve, the assistant's purchases go through
+(`verified: true`) and nobody is asked again.
+
+- **ChatGPT**: turn on Developer mode (in Settings, under Apps, Advanced settings), then create an
+  app with the URL above and OAuth as its authentication. ChatGPT opens Couch Tour's sign-in page.
+- **Claude**: Settings → Connectors → Add custom connector. Enter the URL above, leave the OAuth
+  client ID and secret empty, then Connect. Claude opens Couch Tour's sign-in page.
+
+Then ask, for example: "When is the next Couch Tour show? Buy me two tickets."
+
+This is a demo with one sign-in account: the presenter's, which is BotShield Verified with Couch
+Tour. Its password is the demo key, so only the presenter's own BotShield app is ever asked. How it
+works:
+
+- Discovery follows the MCP authorization spec: a `401` from `/mcp` carries
+  `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/mcp"`, and
+  the authorization server metadata sets `client_id_metadata_document_supported`. There is no
+  dynamic client registration.
+- Clients are Client ID Metadata Documents. ChatGPT signs its token requests with `private_key_jwt`
+  (RS256). Claude is a public client (`token_endpoint_auth_method: none`). Both use PKCE with S256
+  and the `resource` parameter.
+- Purchases use `AssistantGate` in `'ask'` mode, with the access token's `client_id` as the
+  assistant.
+
 ## Status
 
 A draft. Each extension is at version 1, written against Poppy 1.0. While it is a draft its response
